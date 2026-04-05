@@ -96,7 +96,7 @@
                     <button type="button" id="deselect-all-cats" class="btn-small">Tout désélectionner</button>
                 </div>
                 <div class="categories-grid" id="categories-grid">
-                    <!-- Fallback checkboxes shown before JS loads; JS replaces these -->
+                    <!-- Fallback checkboxes: must match LEADERBOARD_CATEGORIES in js/app.js -->
                     <label class="checkbox-label"><input type="checkbox" name="category" value="kills" checked><span>kills</span></label>
                     <label class="checkbox-label"><input type="checkbox" name="category" value="deaths" checked><span>deaths</span></label>
                     <label class="checkbox-label"><input type="checkbox" name="category" value="wins" checked><span>wins</span></label>
@@ -192,7 +192,7 @@
     </footer>
 
     <noscript>
-        <div style="background:#ef4444;color:white;padding:16px;text-align:center;border-radius:8px;margin:16px auto;max-width:1200px;">
+        <div class="noscript-warning">
             JavaScript est requis pour utiliser BF6 Leaderboard. Veuillez activer JavaScript dans votre navigateur.
         </div>
     </noscript>

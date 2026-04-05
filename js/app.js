@@ -69,8 +69,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ─── Populate categories from config ────────────────────────
   // If HTML already contains fallback checkboxes, verify they match config.
   // Otherwise (or if empty), rebuild them from the JS config.
-  const existingCheckboxes = categoriesGrid.querySelectorAll('input[type="checkbox"]');
-  if (existingCheckboxes.length !== LEADERBOARD_CATEGORIES.length) {
+  const fallbackCheckboxes = categoriesGrid.querySelectorAll('input[type="checkbox"]');
+  if (fallbackCheckboxes.length !== LEADERBOARD_CATEGORIES.length) {
     categoriesGrid.innerHTML = "";
     LEADERBOARD_CATEGORIES.forEach((cat) => {
       const label = document.createElement("label");
