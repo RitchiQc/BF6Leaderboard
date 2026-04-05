@@ -8,6 +8,7 @@
 // ─── Configuration ──────────────────────────────────────────────
 const API_BASE_URL = "https://api.gametools.network/bf2042";
 const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
 const LEADERBOARD_CATEGORIES = [
   "kills",
@@ -145,7 +146,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       const elapsed = Math.round(performance.now() - mainStart);
       if (e.name === "AbortError") {
-        setApiIndicator("main", "error", "Timeout (" + FETCH_TIMEOUT_MS / 1000 + "s) — API injoignable");
+        setApiIndicator("main", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
       } else {
         setApiIndicator("main", "error", "Erreur réseau — " + elapsed + " ms");
       }
@@ -171,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       const elapsed = Math.round(performance.now() - lbStart);
       if (e.name === "AbortError") {
-        setApiIndicator("leaderboard", "error", "Timeout (" + FETCH_TIMEOUT_MS / 1000 + "s) — API injoignable");
+        setApiIndicator("leaderboard", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
       } else {
         setApiIndicator(
           "leaderboard",
@@ -203,13 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
       );
       const elapsed = Math.round(performance.now() - pcStart);
       const okCount = results.filter((r) => r.ok).length;
-      if (okCount === platforms.length) {
-        setApiIndicator(
-          "players",
-          "ok",
-          okCount + "/" + platforms.length + " plateformes OK — " + elapsed + " ms",
-        );
-      } else if (okCount > 0) {
+      if (okCount > 0) {
         setApiIndicator(
           "players",
           "ok",
