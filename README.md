@@ -40,6 +40,12 @@ pip install -r requirements.txt
 python app.py
 ```
 
+Pour activer le mode debug (développement seulement) :
+
+```bash
+FLASK_DEBUG=1 python app.py
+```
+
 L'application sera accessible à [http://localhost:5000](http://localhost:5000).
 
 ## Configuration (variables d'environnement)
