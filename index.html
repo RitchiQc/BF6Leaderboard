@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BF6 Leaderboard — Classement Agrégé</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🎯 BF6 Leaderboard</h1>
+            <p class="subtitle">Classement agrégé — Trouvez les vrais meilleurs joueurs</p>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Filters -->
+        <section class="filters">
+            <div class="filter-group">
+                <label for="game-mode">Mode de jeu</label>
+                <select id="game-mode">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="platform">Plateforme</label>
+                <select id="platform">
+                    <!-- Populated by JS -->
+                </select>
+            </div>
+
+            <div class="filter-group">
+                <label for="amount">Joueurs par catégorie</label>
+                <select id="amount">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="200">200</option>
+                </select>
+            </div>
+
+            <div class="filter-group filter-categories">
+                <label>Catégories</label>
+                <div class="categories-toggle">
+                    <button type="button" id="select-all-cats" class="btn-small">Tout sélectionner</button>
+                    <button type="button" id="deselect-all-cats" class="btn-small">Tout désélectionner</button>
+                </div>
+                <div class="categories-grid" id="categories-grid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <button type="button" id="fetch-btn" class="btn-primary">
+                🔍 Charger le classement
+            </button>
+        </section>
+
+        <!-- Progress bar -->
+        <div id="progress" class="progress-container hidden">
+            <div class="progress-text" id="progress-text">Chargement...</div>
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progress-bar"></div>
+            </div>
+        </div>
+
+        <!-- Loading indicator -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Chargement des données...</p>
+        </div>
+
+        <!-- Error message -->
+        <div id="error" class="error-message hidden"></div>
+
+        <!-- Results summary -->
+        <section id="summary" class="summary hidden">
+            <div class="summary-card">
+                <span class="summary-number" id="total-players">0</span>
+                <span class="summary-label">Joueurs</span>
+            </div>
+            <div class="summary-card">
+                <span class="summary-number" id="total-categories">0</span>
+                <span class="summary-label">Catégories</span>
+            </div>
+            <div class="summary-card">
+                <span class="summary-number" id="max-score">0</span>
+                <span class="summary-label">Score max possible</span>
+            </div>
+        </section>
+
+        <!-- Leaderboard table -->
+        <section id="leaderboard-section" class="hidden">
+            <h2>📊 Classement Agrégé</h2>
+            <p class="explanation">
+                Chaque catégorie est normalisée sur une échelle de 0 à 100 (percentile).
+                Le score total est la somme de toutes les catégories.
+                Plus le score est élevé, meilleur est le joueur globalement.
+            </p>
+            <div class="table-wrapper">
+                <table id="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="rank">Rang</th>
+                            <th class="sortable" data-sort="name">Joueur</th>
+                            <th class="sortable" data-sort="total_score">Score Total</th>
+                            <th class="sortable" data-sort="avg_score">Moy. / Catégorie</th>
+                            <th class="sortable" data-sort="categories_count">Catégories</th>
+                            <th>Détails</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leaderboard-body">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>BF6 Leaderboard — Données via <a href="https://api.gametools.network/" target="_blank" rel="noopener noreferrer">GameTools API</a></p>
+        </div>
+    </footer>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
