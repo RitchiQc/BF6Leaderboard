@@ -6,7 +6,7 @@
  */
 
 // ─── Configuration ──────────────────────────────────────────────
-const API_BASE_URL = "https://api.gametools.network/bf2042";
+const API_BASE_URL = "https://api.gametools.network/bf6";
 const FETCH_TIMEOUT_MS = 10000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
