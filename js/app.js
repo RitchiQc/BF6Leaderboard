@@ -86,6 +86,42 @@ document.addEventListener("DOMContentLoaded", () => {
     platformSelect.appendChild(option);
   });
 
+  // ─── Fetch and display online player count ─────────────────
+  fetchPlayerCount();
+
+  async function fetchPlayerCount() {
+    const playerCountText = document.getElementById("player-count-text");
+    try {
+      const platforms = ["pc", "xbl", "psn"];
+      const results = await Promise.all(
+        platforms.map(async (platform) => {
+          try {
+            const url =
+              API_BASE_URL +
+              "/statusarray/?days=1&region=all&platform=" +
+              platform;
+            const response = await fetch(url);
+            if (!response.ok) return 0;
+            const data = await response.json();
+            const amounts = data.soldierAmount || [];
+            return amounts.length > 0 ? amounts[amounts.length - 1] : 0;
+          } catch (e) {
+            return 0;
+          }
+        }),
+      );
+      const total = results.reduce((sum, count) => sum + count, 0);
+      if (total > 0) {
+        playerCountText.textContent =
+          total.toLocaleString("fr-FR") + " joueurs en ligne";
+      } else {
+        playerCountText.textContent = "Joueurs en ligne : indisponible";
+      }
+    } catch (e) {
+      playerCountText.textContent = "Joueurs en ligne : indisponible";
+    }
+  }
+
   LEADERBOARD_CATEGORIES.forEach((cat) => {
     const label = document.createElement("label");
     label.className = "checkbox-label";

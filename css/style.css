@@ -8,6 +8,7 @@
 }
 
 :root {
+    color-scheme: dark;
     --bg-primary: #0a0e17;
     --bg-secondary: #111827;
     --bg-card: #1a2332;
@@ -60,6 +61,23 @@ header h1 {
     font-size: 1.1rem;
 }
 
+.player-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 8px 16px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 20px;
+    font-size: 0.95rem;
+    color: var(--success);
+}
+
+.player-count-icon {
+    font-size: 0.7rem;
+}
+
 /* === Filters === */
 .filters {
     background: var(--bg-card);
@@ -106,6 +124,11 @@ select:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+select option {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
 }
 
 .categories-toggle {
