@@ -67,17 +67,23 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ─── Populate categories from config ────────────────────────
-  LEADERBOARD_CATEGORIES.forEach((cat) => {
-    const label = document.createElement("label");
-    label.className = "checkbox-label";
-    label.innerHTML =
-      '<input type="checkbox" name="category" value="' +
-      escapeHtml(cat) +
-      '" checked><span>' +
-      escapeHtml(cat) +
-      "</span>";
-    categoriesGrid.appendChild(label);
-  });
+  // If HTML already contains fallback checkboxes, verify they match config.
+  // Otherwise (or if empty), rebuild them from the JS config.
+  const fallbackCheckboxes = categoriesGrid.querySelectorAll('input[type="checkbox"]');
+  if (fallbackCheckboxes.length !== LEADERBOARD_CATEGORIES.length) {
+    categoriesGrid.innerHTML = "";
+    LEADERBOARD_CATEGORIES.forEach((cat) => {
+      const label = document.createElement("label");
+      label.className = "checkbox-label";
+      label.innerHTML =
+        '<input type="checkbox" name="category" value="' +
+        escapeHtml(cat) +
+        '" checked><span>' +
+        escapeHtml(cat) +
+        "</span>";
+      categoriesGrid.appendChild(label);
+    });
+  }
 
   // ─── API Status ─────────────────────────────────────────────
   const apiStatusToggle = document.getElementById("api-status-toggle");
@@ -116,7 +122,19 @@ document.addEventListener("DOMContentLoaded", () => {
     setApiIndicator("leaderboard", "checking", "Vérification...");
     setApiIndicator("players", "checking", "Vérification...");
 
-    // Check main API (status array for player count)
+    // Run all three checks in parallel so none stays at "Vérification..." while others complete
+    await Promise.allSettled([
+      checkMainApi(),
+      checkLeaderboardApi(),
+      checkPlayersApi(),
+    ]);
+
+    timeEl.textContent =
+      "Dernière vérification : " +
+      new Date().toLocaleTimeString("fr-FR");
+  }
+
+  async function checkMainApi() {
     const mainStart = performance.now();
     try {
       const response = await fetchWithTimeout(
@@ -151,8 +169,9 @@ document.addEventListener("DOMContentLoaded", () => {
         setApiIndicator("main", "error", "Erreur réseau — " + elapsed + " ms");
       }
     }
+  }
 
-    // Check leaderboard endpoint
+  async function checkLeaderboardApi() {
     const lbStart = performance.now();
     try {
       const response = await fetchWithTimeout(
@@ -181,8 +200,9 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       }
     }
+  }
 
-    // Check player count endpoint (all platforms)
+  async function checkPlayersApi() {
     const pcStart = performance.now();
     try {
       const platforms = ["pc", "xbl", "psn"];
@@ -220,10 +240,6 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       setApiIndicator("players", "error", "Erreur réseau");
     }
-
-    timeEl.textContent =
-      "Dernière vérification : " +
-      new Date().toLocaleTimeString("fr-FR");
   }
 
   // ─── Fetch and display online player count ─────────────────
@@ -316,9 +332,15 @@ document.addEventListener("DOMContentLoaded", () => {
       showProgress(false);
 
       if (!data.players || data.players.length === 0) {
-        showError(
-          "Aucun joueur trouvé. Essayez un autre mode de jeu ou plateforme.",
-        );
+        if (data.failed_categories === data.total_categories) {
+          showError(
+            "L'API GameTools est inaccessible. Toutes les catégories ont échoué. Vérifiez le statut de l'API ci-dessus et réessayez plus tard.",
+          );
+        } else {
+          showError(
+            "Aucun joueur trouvé. Essayez un autre mode de jeu ou plateforme.",
+          );
+        }
         showLoading(false);
         return;
       }
@@ -420,15 +442,17 @@ document.addEventListener("DOMContentLoaded", () => {
           );
           completed++;
           updateProgress(completed, totalCats);
-          return { category: cat, players: players };
+          return { category: cat, players: players, error: false };
         } catch (err) {
           completed++;
           updateProgress(completed, totalCats);
           console.warn("Erreur pour la catégorie " + cat + ":", err);
-          return { category: cat, players: [] };
+          return { category: cat, players: [], error: true };
         }
       }),
     );
+
+    const failedCount = categoryResults.filter((r) => r.error).length;
 
     // Normalize each category
     const normalizedByCategory = {};
@@ -480,6 +504,7 @@ document.addEventListener("DOMContentLoaded", () => {
       categories: categories,
       max_possible_score: categories.length * 100,
       total_categories: categories.length,
+      failed_categories: failedCount,
     };
   }
 
