@@ -96,7 +96,27 @@
                     <button type="button" id="deselect-all-cats" class="btn-small">Tout désélectionner</button>
                 </div>
                 <div class="categories-grid" id="categories-grid">
-                    <!-- Populated by JS -->
+                    <!-- Fallback checkboxes shown before JS loads; JS replaces these -->
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="kills" checked><span>kills</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="deaths" checked><span>deaths</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="wins" checked><span>wins</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="losses" checked><span>losses</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="assists" checked><span>assists</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="revives" checked><span>revives</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="headshots" checked><span>headshots</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="killsPerMinute" checked><span>killsPerMinute</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="damagePerMinute" checked><span>damagePerMinute</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="scorePerMinute" checked><span>scorePerMinute</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="winPercent" checked><span>winPercent</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="killDeath" checked><span>killDeath</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="infantryKillDeath" checked><span>infantryKillDeath</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="bestSquad" checked><span>bestSquad</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="vehiclesDestroyed" checked><span>vehiclesDestroyed</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="saviorKills" checked><span>saviorKills</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="avengerKills" checked><span>avengerKills</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="spotEnemies" checked><span>spotEnemies</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="objectiveTime" checked><span>objectiveTime</span></label>
+                    <label class="checkbox-label"><input type="checkbox" name="category" value="timePlayed" checked><span>timePlayed</span></label>
                 </div>
             </div>
 
@@ -171,6 +191,11 @@
         </div>
     </footer>
 
+    <noscript>
+        <div style="background:#ef4444;color:white;padding:16px;text-align:center;border-radius:8px;margin:16px auto;max-width:1200px;">
+            JavaScript est requis pour utiliser BF6 Leaderboard. Veuillez activer JavaScript dans votre navigateur.
+        </div>
+    </noscript>
     <script src="js/app.js"></script>
 </body>
 </html>
