@@ -1,0 +1,536 @@
+/**
+ * BF6 Leaderboard — Standalone static web app
+ *
+ * All configuration, API fetching, normalization, and aggregation
+ * logic runs directly in the browser. No backend required.
+ */
+
+// ─── Configuration ──────────────────────────────────────────────
+const API_BASE_URL = "https://api.gametools.network/bf2042";
+
+const LEADERBOARD_CATEGORIES = [
+  "kills",
+  "deaths",
+  "wins",
+  "losses",
+  "assists",
+  "revives",
+  "headshots",
+  "killsPerMinute",
+  "damagePerMinute",
+  "scorePerMinute",
+  "winPercent",
+  "killDeath",
+  "infantryKillDeath",
+  "bestSquad",
+  "vehiclesDestroyed",
+  "saviorKills",
+  "avengerKills",
+  "spotEnemies",
+  "objectiveTime",
+  "timePlayed",
+];
+
+const LOWER_IS_BETTER = ["deaths", "losses"];
+
+const GAME_MODES = [
+  { id: "all", name: "Tous les modes" },
+  { id: "conquest", name: "Conquête" },
+  { id: "breakthrough", name: "Percée" },
+  { id: "hazardzone", name: "Hazard Zone" },
+  { id: "portal", name: "Portal" },
+  { id: "rush", name: "Ruée" },
+  { id: "strikepoint", name: "Strikepoint" },
+];
+
+const PLATFORMS = [
+  { id: "pc", name: "PC" },
+  { id: "xbl", name: "Xbox" },
+  { id: "psn", name: "PlayStation" },
+];
+
+// ─── DOM References ─────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  const fetchBtn = document.getElementById("fetch-btn");
+  const gameModeSelect = document.getElementById("game-mode");
+  const platformSelect = document.getElementById("platform");
+  const amountSelect = document.getElementById("amount");
+  const loadingEl = document.getElementById("loading");
+  const errorEl = document.getElementById("error");
+  const summaryEl = document.getElementById("summary");
+  const leaderboardSection = document.getElementById("leaderboard-section");
+  const leaderboardBody = document.getElementById("leaderboard-body");
+  const selectAllBtn = document.getElementById("select-all-cats");
+  const deselectAllBtn = document.getElementById("deselect-all-cats");
+  const categoriesGrid = document.getElementById("categories-grid");
+  const progressContainer = document.getElementById("progress");
+  const progressBar = document.getElementById("progress-bar");
+  const progressText = document.getElementById("progress-text");
+
+  let currentData = null;
+  let sortColumn = "rank";
+  let sortDirection = "asc";
+
+  // ─── Populate UI from config ────────────────────────────────
+  GAME_MODES.forEach((mode) => {
+    const option = document.createElement("option");
+    option.value = mode.id;
+    option.textContent = mode.name;
+    gameModeSelect.appendChild(option);
+  });
+
+  PLATFORMS.forEach((p) => {
+    const option = document.createElement("option");
+    option.value = p.id;
+    option.textContent = p.name;
+    platformSelect.appendChild(option);
+  });
+
+  LEADERBOARD_CATEGORIES.forEach((cat) => {
+    const label = document.createElement("label");
+    label.className = "checkbox-label";
+    label.innerHTML =
+      '<input type="checkbox" name="category" value="' +
+      escapeHtml(cat) +
+      '" checked><span>' +
+      escapeHtml(cat) +
+      "</span>";
+    categoriesGrid.appendChild(label);
+  });
+
+  // ─── Category toggle buttons ────────────────────────────────
+  selectAllBtn.addEventListener("click", () => {
+    document
+      .querySelectorAll('#categories-grid input[type="checkbox"]')
+      .forEach((cb) => {
+        cb.checked = true;
+      });
+  });
+
+  deselectAllBtn.addEventListener("click", () => {
+    document
+      .querySelectorAll('#categories-grid input[type="checkbox"]')
+      .forEach((cb) => {
+        cb.checked = false;
+      });
+  });
+
+  // ─── Fetch leaderboard ──────────────────────────────────────
+  fetchBtn.addEventListener("click", fetchLeaderboard);
+
+  async function fetchLeaderboard() {
+    const gameMode = gameModeSelect.value;
+    const platform = platformSelect.value;
+    const amount = parseInt(amountSelect.value, 10);
+
+    const selectedCategories = Array.from(
+      document.querySelectorAll(
+        '#categories-grid input[type="checkbox"]:checked',
+      ),
+    ).map((cb) => cb.value);
+
+    if (selectedCategories.length === 0) {
+      showError("Veuillez sélectionner au moins une catégorie.");
+      return;
+    }
+
+    showLoading(true);
+    hideError();
+    summaryEl.classList.add("hidden");
+    leaderboardSection.classList.add("hidden");
+    showProgress(true);
+
+    try {
+      const data = await aggregateLeaderboard(
+        selectedCategories,
+        platform,
+        gameMode,
+        amount,
+      );
+      currentData = data;
+
+      showProgress(false);
+
+      if (!data.players || data.players.length === 0) {
+        showError(
+          "Aucun joueur trouvé. Essayez un autre mode de jeu ou plateforme.",
+        );
+        showLoading(false);
+        return;
+      }
+
+      renderSummary(data);
+      renderLeaderboard(data);
+      showLoading(false);
+    } catch (err) {
+      showProgress(false);
+      showError("Erreur lors du chargement: " + err.message);
+      showLoading(false);
+    }
+  }
+
+  // ─── API Fetching ───────────────────────────────────────────
+  async function fetchCategoryLeaderboard(
+    category,
+    platform,
+    gameMode,
+    amount,
+  ) {
+    const params = new URLSearchParams({
+      name: category,
+      platform: platform,
+      skip: "0",
+      amount: String(amount),
+    });
+
+    if (gameMode && gameMode !== "all") {
+      params.set("gamemode", gameMode);
+    }
+
+    const url = API_BASE_URL + "/leaderboard/?" + params.toString();
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(
+        "Erreur API pour " + category + " (HTTP " + response.status + ")",
+      );
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  }
+
+  // ─── Normalization ──────────────────────────────────────────
+  function normalizeScores(players, category) {
+    if (!players || players.length === 0) {
+      return {};
+    }
+
+    const values = players
+      .map((p) => ({
+        name: p.name || "Unknown",
+        value: p.value || 0,
+      }))
+      .sort((a, b) => a.value - b.value);
+
+    const total = values.length;
+    if (total <= 1) {
+      const result = {};
+      result[values[0].name] = 100;
+      return result;
+    }
+
+    const normalized = {};
+    for (let rank = 0; rank < total; rank++) {
+      let percentile = (rank / (total - 1)) * 100;
+      if (LOWER_IS_BETTER.includes(category)) {
+        percentile = 100 - percentile;
+      }
+      normalized[values[rank].name] = Math.round(percentile * 100) / 100;
+    }
+
+    return normalized;
+  }
+
+  // ─── Aggregation ────────────────────────────────────────────
+  async function aggregateLeaderboard(
+    categories,
+    platform,
+    gameMode,
+    amount,
+  ) {
+    const totalCats = categories.length;
+    let completed = 0;
+
+    updateProgress(0, totalCats);
+
+    // Fetch all categories concurrently with progress tracking
+    const categoryResults = await Promise.all(
+      categories.map(async (cat) => {
+        try {
+          const players = await fetchCategoryLeaderboard(
+            cat,
+            platform,
+            gameMode,
+            amount,
+          );
+          completed++;
+          updateProgress(completed, totalCats);
+          return { category: cat, players: players };
+        } catch (err) {
+          completed++;
+          updateProgress(completed, totalCats);
+          console.warn("Erreur pour la catégorie " + cat + ":", err);
+          return { category: cat, players: [] };
+        }
+      }),
+    );
+
+    // Normalize each category
+    const normalizedByCategory = {};
+    for (const result of categoryResults) {
+      normalizedByCategory[result.category] = normalizeScores(
+        result.players,
+        result.category,
+      );
+    }
+
+    // Aggregate: sum normalized scores per player
+    const playerScores = {};
+    for (const cat of categories) {
+      const scores = normalizedByCategory[cat] || {};
+      for (const [playerName, score] of Object.entries(scores)) {
+        if (!playerScores[playerName]) {
+          playerScores[playerName] = {
+            name: playerName,
+            total_score: 0,
+            categories: {},
+            categories_count: 0,
+          };
+        }
+        playerScores[playerName].total_score += score;
+        playerScores[playerName].categories[cat] = score;
+        playerScores[playerName].categories_count += 1;
+      }
+    }
+
+    // Sort by total score descending
+    const sortedPlayers = Object.values(playerScores).sort(
+      (a, b) => b.total_score - a.total_score,
+    );
+
+    // Add rank and avg
+    for (let i = 0; i < sortedPlayers.length; i++) {
+      const player = sortedPlayers[i];
+      player.rank = i + 1;
+      player.total_score = Math.round(player.total_score * 100) / 100;
+      player.avg_score =
+        player.categories_count > 0
+          ? Math.round((player.total_score / player.categories_count) * 100) /
+            100
+          : 0;
+    }
+
+    return {
+      players: sortedPlayers,
+      categories: categories,
+      max_possible_score: categories.length * 100,
+      total_categories: categories.length,
+    };
+  }
+
+  // ─── Rendering ──────────────────────────────────────────────
+  function renderSummary(data) {
+    document.getElementById("total-players").textContent = data.players.length;
+    document.getElementById("total-categories").textContent =
+      data.total_categories;
+    document.getElementById("max-score").textContent = data.max_possible_score;
+    summaryEl.classList.remove("hidden");
+  }
+
+  function renderLeaderboard(data) {
+    leaderboardBody.innerHTML = "";
+
+    const maxScore = data.max_possible_score || 1;
+
+    data.players.forEach((player) => {
+      // Main row
+      const tr = document.createElement("tr");
+      tr.innerHTML =
+        '<td class="' +
+        getRankClass(player.rank) +
+        '">' +
+        getRankDisplay(player.rank) +
+        "</td>" +
+        "<td><strong>" +
+        escapeHtml(player.name) +
+        "</strong></td>" +
+        "<td>" +
+        '<div class="score-bar">' +
+        '<span class="score-value">' +
+        player.total_score.toFixed(1) +
+        "</span>" +
+        '<div class="score-bar-bg">' +
+        '<div class="score-bar-fill" style="width: ' +
+        (player.total_score / maxScore) * 100 +
+        '%"></div>' +
+        "</div>" +
+        "</div>" +
+        "</td>" +
+        "<td>" +
+        player.avg_score.toFixed(1) +
+        "</td>" +
+        "<td>" +
+        player.categories_count +
+        " / " +
+        data.total_categories +
+        "</td>" +
+        "<td>" +
+        '<button class="details-btn" data-player="' +
+        escapeHtml(player.name) +
+        '">' +
+        "Détails ▾" +
+        "</button>" +
+        "</td>";
+      leaderboardBody.appendChild(tr);
+
+      // Details row
+      const detailsTr = document.createElement("tr");
+      detailsTr.classList.add("details-row");
+      detailsTr.id = "details-" + sanitizeId(player.name);
+
+      const detailsTd = document.createElement("td");
+      detailsTd.colSpan = 6;
+      detailsTd.classList.add("details-content");
+
+      let barsHtml = '<div class="category-bars">';
+      data.categories.forEach((cat) => {
+        const catScore = player.categories[cat];
+        if (catScore !== undefined) {
+          barsHtml +=
+            '<div class="category-bar-item">' +
+            '<span class="category-bar-name">' +
+            escapeHtml(cat) +
+            "</span>" +
+            '<div class="category-bar-visual">' +
+            '<div class="category-bar-visual-fill" style="width: ' +
+            catScore +
+            '%"></div>' +
+            "</div>" +
+            '<span class="category-bar-value">' +
+            catScore.toFixed(1) +
+            "</span>" +
+            "</div>";
+        } else {
+          barsHtml +=
+            '<div class="category-bar-item">' +
+            '<span class="category-bar-name">' +
+            escapeHtml(cat) +
+            "</span>" +
+            '<div class="category-bar-visual">' +
+            '<div class="category-bar-visual-fill" style="width: 0%"></div>' +
+            "</div>" +
+            '<span class="category-bar-value" style="color: var(--text-secondary)">—</span>' +
+            "</div>";
+        }
+      });
+      barsHtml += "</div>";
+
+      detailsTd.innerHTML = barsHtml;
+      detailsTr.appendChild(detailsTd);
+      leaderboardBody.appendChild(detailsTr);
+    });
+
+    // Toggle details on click
+    leaderboardBody.querySelectorAll(".details-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const playerName = btn.getAttribute("data-player");
+        const detailsRow = document.getElementById(
+          "details-" + sanitizeId(playerName),
+        );
+        if (detailsRow) {
+          detailsRow.classList.toggle("open");
+          btn.textContent = detailsRow.classList.contains("open")
+            ? "Détails ▴"
+            : "Détails ▾";
+        }
+      });
+    });
+
+    leaderboardSection.classList.remove("hidden");
+  }
+
+  // ─── Sorting ────────────────────────────────────────────────
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    th.addEventListener("click", () => {
+      const column = th.getAttribute("data-sort");
+      if (sortColumn === column) {
+        sortDirection = sortDirection === "asc" ? "desc" : "asc";
+      } else {
+        sortColumn = column;
+        sortDirection = column === "name" ? "asc" : "desc";
+      }
+
+      document.querySelectorAll("th.sortable").forEach((h) => {
+        h.classList.remove("sort-asc", "sort-desc");
+      });
+      th.classList.add(sortDirection === "asc" ? "sort-asc" : "sort-desc");
+
+      if (currentData) {
+        sortData(currentData.players, column, sortDirection);
+        renderLeaderboard(currentData);
+      }
+    });
+  });
+
+  function sortData(players, column, direction) {
+    players.sort((a, b) => {
+      let valA = a[column];
+      let valB = b[column];
+
+      if (typeof valA === "string") {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
+
+      if (valA < valB) return direction === "asc" ? -1 : 1;
+      if (valA > valB) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    if (column === "total_score" || column === "avg_score") {
+      players.forEach((p, i) => {
+        p.rank = i + 1;
+      });
+    }
+  }
+
+  // ─── Helper functions ───────────────────────────────────────
+  function getRankClass(rank) {
+    if (rank <= 3) return "rank-" + rank;
+    return "";
+  }
+
+  function getRankDisplay(rank) {
+    const medals = { 1: "🥇", 2: "🥈", 3: "🥉" };
+    if (medals[rank]) {
+      return '<span class="rank-medal">' + medals[rank] + "</span> " + rank;
+    }
+    return String(rank);
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  function sanitizeId(name) {
+    return name.replace(/[^a-zA-Z0-9]/g, "_");
+  }
+
+  function showLoading(show) {
+    loadingEl.classList.toggle("hidden", !show);
+    fetchBtn.disabled = show;
+  }
+
+  function showProgress(show) {
+    progressContainer.classList.toggle("hidden", !show);
+  }
+
+  function updateProgress(completed, total) {
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    progressBar.style.width = pct + "%";
+    progressText.textContent =
+      "Chargement des catégories: " + completed + " / " + total;
+  }
+
+  function showError(message) {
+    errorEl.textContent = message;
+    errorEl.classList.remove("hidden");
+  }
+
+  function hideError() {
+    errorEl.classList.add("hidden");
+  }
+});
