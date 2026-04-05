@@ -58,13 +58,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let sortDirection = "asc";
 
   // ─── Fetch with timeout helper ─────────────────────────────
-  // The abort signal remains active for the entire duration (including body
-  // reading via response.json()), so a slow body transfer will still be
-  // terminated after the timeout fires.
+  // AbortSignal.timeout keeps the abort signal active for the entire
+  // duration (including body reading via response.json()), so a slow
+  // body transfer will still be terminated after the timeout fires.
   function fetchWithTimeout(url, timeoutMs) {
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
-    return fetch(url, { signal: controller.signal });
+    return fetch(url, {
+      signal: AbortSignal.timeout(timeoutMs || FETCH_TIMEOUT_MS),
+    });
   }
 
   // ─── Populate categories from config ────────────────────────
@@ -164,7 +164,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       const elapsed = Math.round(performance.now() - mainStart);
-      if (e.name === "AbortError") {
+      if (e.name === "TimeoutError" || e.name === "AbortError") {
         setApiIndicator("main", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
       } else {
         setApiIndicator("main", "error", "Erreur réseau — " + elapsed + " ms");
@@ -191,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     } catch (e) {
       const elapsed = Math.round(performance.now() - lbStart);
-      if (e.name === "AbortError") {
+      if (e.name === "TimeoutError" || e.name === "AbortError") {
         setApiIndicator("leaderboard", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
       } else {
         setApiIndicator(
