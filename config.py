@@ -46,6 +46,7 @@ GAME_MODES = [
     {"id": "hazardzone", "name": "Hazard Zone"},
     {"id": "portal", "name": "Portal"},
     {"id": "rush", "name": "Ruée"},
+    {"id": "strikepoint", "name": "Strikepoint"},
 ]
 
 # Available platforms
