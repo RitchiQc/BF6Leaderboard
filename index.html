@@ -19,6 +19,43 @@
     </header>
 
     <main class="container">
+        <!-- API Status -->
+        <section id="api-status" class="api-status">
+            <div class="api-status-header">
+                <h3>📡 Statut de l'API</h3>
+                <button type="button" id="api-status-toggle" class="btn-small">Masquer</button>
+            </div>
+            <div id="api-status-body" class="api-status-body">
+                <div class="api-status-grid" id="api-status-grid">
+                    <div class="api-status-item" id="api-status-main">
+                        <span class="api-status-indicator checking" id="api-indicator-main">⏳</span>
+                        <div class="api-status-info">
+                            <span class="api-status-name">API GameTools</span>
+                            <span class="api-status-detail" id="api-detail-main">Vérification...</span>
+                        </div>
+                    </div>
+                    <div class="api-status-item" id="api-status-leaderboard">
+                        <span class="api-status-indicator checking" id="api-indicator-leaderboard">⏳</span>
+                        <div class="api-status-info">
+                            <span class="api-status-name">Classement (Leaderboard)</span>
+                            <span class="api-status-detail" id="api-detail-leaderboard">Vérification...</span>
+                        </div>
+                    </div>
+                    <div class="api-status-item" id="api-status-players">
+                        <span class="api-status-indicator checking" id="api-indicator-players">⏳</span>
+                        <div class="api-status-info">
+                            <span class="api-status-name">Joueurs en ligne</span>
+                            <span class="api-status-detail" id="api-detail-players">Vérification...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="api-status-footer">
+                    <span id="api-status-time" class="api-status-time"></span>
+                    <button type="button" id="api-recheck-btn" class="btn-small">🔄 Revérifier</button>
+                </div>
+            </div>
+        </section>
+
         <!-- Filters -->
         <section class="filters">
             <div class="filter-group">
