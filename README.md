@@ -1,6 +1,6 @@
 # 🎯 BF6 Leaderboard — Classement Agrégé
 
-Trouvez les **vrais meilleurs joueurs** de Battlefield 2042 (BF6) en agrégeant toutes les catégories du classement en un seul score.
+Trouvez les **vrais meilleurs joueurs** de Battlefield 6 en agrégeant toutes les catégories du classement en un seul score.
 
 **Application 100% web** — ouvrez simplement `index.html` dans votre navigateur, aucune installation requise.
 

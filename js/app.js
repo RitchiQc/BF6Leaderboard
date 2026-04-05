@@ -6,7 +6,7 @@
  */
 
 // ─── Configuration ──────────────────────────────────────────────
-const API_BASE_URL = "https://api.gametools.network/bf2042";
+const API_BASE_URL = "https://api.gametools.network/bf6";
 const FETCH_TIMEOUT_MS = 10000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
@@ -58,12 +58,13 @@ document.addEventListener("DOMContentLoaded", () => {
   let sortDirection = "asc";
 
   // ─── Fetch with timeout helper ─────────────────────────────
+  // The abort signal remains active for the entire duration (including body
+  // reading via response.json()), so a slow body transfer will still be
+  // terminated after the timeout fires.
   function fetchWithTimeout(url, timeoutMs) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
-    return fetch(url, { signal: controller.signal }).finally(() =>
-      clearTimeout(timeoutId),
-    );
+    setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal });
   }
 
   // ─── Populate categories from config ────────────────────────
@@ -205,7 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function checkPlayersApi() {
     const pcStart = performance.now();
     try {
-      const platforms = ["pc", "xbl", "psn"];
+      const platforms = ["pc", "xboxseries", "ps5"];
       const results = await Promise.all(
         platforms.map(async (platform) => {
           try {
@@ -248,7 +249,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function fetchPlayerCount() {
     const playerCountText = document.getElementById("player-count-text");
     try {
-      const platforms = ["pc", "xbl", "psn"];
+      const platforms = ["pc", "xboxseries", "ps5"];
       const results = await Promise.all(
         platforms.map(async (platform) => {
           try {
