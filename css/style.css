@@ -78,6 +78,99 @@ header h1 {
     font-size: 0.7rem;
 }
 
+/* === API Status === */
+.api-status {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    margin: 16px 0;
+    box-shadow: var(--shadow);
+    border-left: 3px solid var(--accent);
+}
+
+.api-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.api-status-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.api-status-body.hidden {
+    display: none;
+}
+
+.api-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.api-status-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.api-status-indicator {
+    font-size: 1.1rem;
+    min-width: 24px;
+    text-align: center;
+}
+
+.api-status-indicator.checking {
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.api-status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.api-status-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.api-status-detail {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.api-status-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+}
+
+.api-status-time {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
 /* === Filters === */
 .filters {
     background: var(--bg-card);
@@ -537,5 +630,9 @@ footer a:hover {
     td, th {
         padding: 8px 10px;
         font-size: 0.85rem;
+    }
+
+    .api-status-grid {
+        grid-template-columns: 1fr;
     }
 }

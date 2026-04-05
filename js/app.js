@@ -7,6 +7,8 @@
 
 // ─── Configuration ──────────────────────────────────────────────
 const API_BASE_URL = "https://api.gametools.network/bf2042";
+const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
 const LEADERBOARD_CATEGORIES = [
   "kills",
@@ -33,22 +35,6 @@ const LEADERBOARD_CATEGORIES = [
 
 const LOWER_IS_BETTER = ["deaths", "losses"];
 
-const GAME_MODES = [
-  { id: "all", name: "Tous les modes" },
-  { id: "conquest", name: "Conquête" },
-  { id: "breakthrough", name: "Percée" },
-  { id: "hazardzone", name: "Hazard Zone" },
-  { id: "portal", name: "Portal" },
-  { id: "rush", name: "Ruée" },
-  { id: "strikepoint", name: "Strikepoint" },
-];
-
-const PLATFORMS = [
-  { id: "pc", name: "PC" },
-  { id: "xbl", name: "Xbox" },
-  { id: "psn", name: "PlayStation" },
-];
-
 // ─── DOM References ─────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
   const fetchBtn = document.getElementById("fetch-btn");
@@ -71,20 +57,174 @@ document.addEventListener("DOMContentLoaded", () => {
   let sortColumn = "rank";
   let sortDirection = "asc";
 
-  // ─── Populate UI from config ────────────────────────────────
-  GAME_MODES.forEach((mode) => {
-    const option = document.createElement("option");
-    option.value = mode.id;
-    option.textContent = mode.name;
-    gameModeSelect.appendChild(option);
+  // ─── Fetch with timeout helper ─────────────────────────────
+  function fetchWithTimeout(url, timeoutMs) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
+    return fetch(url, { signal: controller.signal }).finally(() =>
+      clearTimeout(timeoutId),
+    );
+  }
+
+  // ─── Populate categories from config ────────────────────────
+  LEADERBOARD_CATEGORIES.forEach((cat) => {
+    const label = document.createElement("label");
+    label.className = "checkbox-label";
+    label.innerHTML =
+      '<input type="checkbox" name="category" value="' +
+      escapeHtml(cat) +
+      '" checked><span>' +
+      escapeHtml(cat) +
+      "</span>";
+    categoriesGrid.appendChild(label);
   });
 
-  PLATFORMS.forEach((p) => {
-    const option = document.createElement("option");
-    option.value = p.id;
-    option.textContent = p.name;
-    platformSelect.appendChild(option);
+  // ─── API Status ─────────────────────────────────────────────
+  const apiStatusToggle = document.getElementById("api-status-toggle");
+  const apiStatusBody = document.getElementById("api-status-body");
+  const apiRecheckBtn = document.getElementById("api-recheck-btn");
+
+  apiStatusToggle.addEventListener("click", () => {
+    const isHidden = apiStatusBody.classList.toggle("hidden");
+    apiStatusToggle.textContent = isHidden ? "Afficher" : "Masquer";
   });
+
+  apiRecheckBtn.addEventListener("click", () => {
+    checkApiStatus();
+  });
+
+  checkApiStatus();
+
+  function setApiIndicator(id, status, detail) {
+    const indicator = document.getElementById("api-indicator-" + id);
+    const detailEl = document.getElementById("api-detail-" + id);
+    indicator.className = "api-status-indicator " + status;
+    if (status === "ok") {
+      indicator.textContent = "✅";
+    } else if (status === "error") {
+      indicator.textContent = "❌";
+    } else {
+      indicator.textContent = "⏳";
+    }
+    detailEl.textContent = detail;
+  }
+
+  async function checkApiStatus() {
+    const timeEl = document.getElementById("api-status-time");
+
+    setApiIndicator("main", "checking", "Vérification...");
+    setApiIndicator("leaderboard", "checking", "Vérification...");
+    setApiIndicator("players", "checking", "Vérification...");
+
+    // Check main API (status array for player count)
+    const mainStart = performance.now();
+    try {
+      const response = await fetchWithTimeout(
+        API_BASE_URL + "/statusarray/?days=1&region=all&platform=pc",
+        FETCH_TIMEOUT_MS,
+      );
+      const elapsed = Math.round(performance.now() - mainStart);
+      if (response.ok) {
+        const data = await response.json();
+        const amounts = data.soldierAmount || [];
+        if (amounts.length > 0) {
+          setApiIndicator("main", "ok", "En ligne — " + elapsed + " ms");
+        } else {
+          setApiIndicator(
+            "main",
+            "ok",
+            "Accessible mais données vides — " + elapsed + " ms",
+          );
+        }
+      } else {
+        setApiIndicator(
+          "main",
+          "error",
+          "Erreur HTTP " + response.status + " — " + elapsed + " ms",
+        );
+      }
+    } catch (e) {
+      const elapsed = Math.round(performance.now() - mainStart);
+      if (e.name === "AbortError") {
+        setApiIndicator("main", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
+      } else {
+        setApiIndicator("main", "error", "Erreur réseau — " + elapsed + " ms");
+      }
+    }
+
+    // Check leaderboard endpoint
+    const lbStart = performance.now();
+    try {
+      const response = await fetchWithTimeout(
+        API_BASE_URL + "/leaderboard/?name=kills&platform=pc&skip=0&amount=1",
+        FETCH_TIMEOUT_MS,
+      );
+      const elapsed = Math.round(performance.now() - lbStart);
+      if (response.ok) {
+        setApiIndicator("leaderboard", "ok", "En ligne — " + elapsed + " ms");
+      } else {
+        setApiIndicator(
+          "leaderboard",
+          "error",
+          "Erreur HTTP " + response.status + " — " + elapsed + " ms",
+        );
+      }
+    } catch (e) {
+      const elapsed = Math.round(performance.now() - lbStart);
+      if (e.name === "AbortError") {
+        setApiIndicator("leaderboard", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
+      } else {
+        setApiIndicator(
+          "leaderboard",
+          "error",
+          "Erreur réseau — " + elapsed + " ms",
+        );
+      }
+    }
+
+    // Check player count endpoint (all platforms)
+    const pcStart = performance.now();
+    try {
+      const platforms = ["pc", "xbl", "psn"];
+      const results = await Promise.all(
+        platforms.map(async (platform) => {
+          try {
+            const response = await fetchWithTimeout(
+              API_BASE_URL +
+                "/statusarray/?days=1&region=all&platform=" +
+                platform,
+              FETCH_TIMEOUT_MS,
+            );
+            if (!response.ok) return { platform: platform, ok: false };
+            return { platform: platform, ok: true };
+          } catch (e) {
+            return { platform: platform, ok: false };
+          }
+        }),
+      );
+      const elapsed = Math.round(performance.now() - pcStart);
+      const okCount = results.filter((r) => r.ok).length;
+      if (okCount > 0) {
+        setApiIndicator(
+          "players",
+          "ok",
+          okCount + "/" + platforms.length + " plateformes OK — " + elapsed + " ms",
+        );
+      } else {
+        setApiIndicator(
+          "players",
+          "error",
+          "Aucune plateforme accessible — " + elapsed + " ms",
+        );
+      }
+    } catch (e) {
+      setApiIndicator("players", "error", "Erreur réseau");
+    }
+
+    timeEl.textContent =
+      "Dernière vérification : " +
+      new Date().toLocaleTimeString("fr-FR");
+  }
 
   // ─── Fetch and display online player count ─────────────────
   fetchPlayerCount();
@@ -100,7 +240,7 @@ document.addEventListener("DOMContentLoaded", () => {
               API_BASE_URL +
               "/statusarray/?days=1&region=all&platform=" +
               platform;
-            const response = await fetch(url);
+            const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
             if (!response.ok) return 0;
             const data = await response.json();
             const amounts = data.soldierAmount || [];
@@ -121,18 +261,6 @@ document.addEventListener("DOMContentLoaded", () => {
       playerCountText.textContent = "Joueurs en ligne : indisponible";
     }
   }
-
-  LEADERBOARD_CATEGORIES.forEach((cat) => {
-    const label = document.createElement("label");
-    label.className = "checkbox-label";
-    label.innerHTML =
-      '<input type="checkbox" name="category" value="' +
-      escapeHtml(cat) +
-      '" checked><span>' +
-      escapeHtml(cat) +
-      "</span>";
-    categoriesGrid.appendChild(label);
-  });
 
   // ─── Category toggle buttons ────────────────────────────────
   selectAllBtn.addEventListener("click", () => {
@@ -224,7 +352,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const url = API_BASE_URL + "/leaderboard/?" + params.toString();
-    const response = await fetch(url);
+    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(
