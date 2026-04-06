@@ -19,13 +19,36 @@ const ALLOWED_HOSTS = ["api.tracker.gg"];
 const UPSTREAM_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+// Full set of browser-like headers sent to Tracker.gg.
+// Cloudflare bot-management inspects Sec-Fetch-*, Accept-Language,
+// Accept-Encoding and other signals; missing them often triggers a
+// 403 or a silent 404.
+function upstreamHeaders() {
+  return {
+    "User-Agent": UPSTREAM_USER_AGENT,
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    Referer: "https://tracker.gg/",
+    Origin: "https://tracker.gg",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Cache-Control": "no-cache",
+    Pragma: "no-cache",
+  };
+}
+
 // CORS headers added to every response.
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Expose-Headers": "X-Proxy-Status",
+    "Access-Control-Expose-Headers": "X-Proxy-Status, X-Upstream-Status",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -55,8 +78,15 @@ export default {
       return handleProxy(request, url);
     }
 
+    // Diagnostic endpoint — makes a test call to Tracker.gg and
+    // reports the upstream status + first bytes of the body so the
+    // user can verify their deployment works end-to-end.
+    if (url.pathname === "/test") {
+      return handleTest(request);
+    }
+
     return Response.json(
-      { error: "Not found. Use /proxy?url=<encoded-url>" },
+      { error: "Not found. Use /proxy?url=<encoded-url> or /test" },
       { status: 404, headers: corsHeaders(request.headers.get("Origin")) },
     );
   },
@@ -103,32 +133,90 @@ async function handleProxy(request, url) {
 
   try {
     // Fetch from Tracker.gg server-side (no CORS restrictions).
-    // Tracker.gg expects requests to look like they come from its own
-    // website, so we set Referer / Origin accordingly.
+    // Send comprehensive browser-like headers so Cloudflare's bot
+    // management does not flag the request.
     const response = await fetch(targetUrl.toString(), {
-      headers: {
-        "User-Agent": UPSTREAM_USER_AGENT,
-        Accept: "application/json, text/plain, */*",
-        Referer: "https://tracker.gg/",
-        Origin: "https://tracker.gg",
-      },
+      headers: upstreamHeaders(),
+      redirect: "follow",
     });
 
-    // Forward the upstream response with CORS headers.
-    // Include X-Proxy-Status so the front-end can distinguish a
-    // worker-level error from an upstream error.
+    const upstreamStatus = response.status;
     const body = await response.text();
-    return new Response(body, {
-      status: response.status,
-      headers: {
-        ...headers,
-        "Content-Type": response.headers.get("Content-Type") || "application/json",
-        "X-Proxy-Status": "upstream-" + response.status,
+
+    // Always return HTTP 200 from the Worker so the browser / fetch
+    // API never shows a raw "page not found" error.  The real upstream
+    // status is available in the X-Upstream-Status header and, for
+    // non-2xx responses, also in the JSON body wrapper.
+    if (upstreamStatus >= 200 && upstreamStatus < 300) {
+      return new Response(body, {
+        status: 200,
+        headers: {
+          ...headers,
+          "Content-Type": response.headers.get("Content-Type") || "application/json",
+          "X-Proxy-Status": "ok",
+          "X-Upstream-Status": String(upstreamStatus),
+        },
+      });
+    }
+
+    // Upstream returned an error — wrap it so the front-end can
+    // inspect both the status and the original body.
+    return Response.json(
+      {
+        proxyError: true,
+        upstreamStatus: upstreamStatus,
+        message: "Tracker.gg returned HTTP " + upstreamStatus,
+        body: body.substring(0, 2000),
       },
-    });
+      {
+        status: 200,
+        headers: {
+          ...headers,
+          "X-Proxy-Status": "upstream-error",
+          "X-Upstream-Status": String(upstreamStatus),
+        },
+      },
+    );
   } catch (err) {
     return Response.json(
-      { error: "Upstream request failed: " + err.message },
+      { proxyError: true, upstreamStatus: 0, message: "Upstream request failed: " + err.message },
+      { status: 502, headers },
+    );
+  }
+}
+
+// ─── Diagnostic endpoint ─────────────────────────────────────
+// GET /test — makes a quick call to the Tracker.gg leaderboard
+// endpoint and returns a summary.  Useful for verifying the
+// Worker is deployed and Tracker.gg is reachable.
+async function handleTest(request) {
+  const headers = corsHeaders(request.headers.get("Origin"));
+  const testUrl =
+    "https://api.tracker.gg/api/v2/bf6/standard/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1";
+
+  try {
+    const response = await fetch(testUrl, {
+      headers: upstreamHeaders(),
+      redirect: "follow",
+    });
+    const body = await response.text();
+    let isJson = false;
+    try { JSON.parse(body); isJson = true; } catch { /* not JSON */ }
+
+    return Response.json(
+      {
+        status: "tested",
+        upstreamUrl: testUrl,
+        upstreamStatus: response.status,
+        upstreamContentType: response.headers.get("Content-Type"),
+        isJson: isJson,
+        bodyPreview: body.substring(0, 500),
+      },
+      { headers },
+    );
+  } catch (err) {
+    return Response.json(
+      { status: "error", message: err.message },
       { status: 502, headers },
     );
   }

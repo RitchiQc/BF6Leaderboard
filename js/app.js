@@ -137,25 +137,48 @@ function initApp() {
   // ─── Fetch through self-hosted Worker ──────────────────────
   // Tries the self-hosted Cloudflare Worker first.  If it fails
   // or is not configured, falls back to public CORS proxies.
+  //
+  // The Worker always returns HTTP 200 for upstream responses
+  // (even when Tracker.gg returned an error).  It signals problems
+  // via the X-Proxy-Status / X-Upstream-Status headers and by
+  // wrapping non-2xx upstream bodies in { proxyError: true, … }.
   async function fetchViaProxy(targetUrl, timeoutMs, options) {
     // ── Try the self-hosted Worker first ──
     if (SELF_HOSTED_PROXY_URL) {
       try {
         const url = workerProxyUrl(targetUrl);
         const response = await fetchWithTimeout(url, timeoutMs, options);
+
         if (response.ok) {
-          // Quick JSON sanity check.
+          // Worker returned 200 — but check if the upstream was actually an error.
+          const proxyStatus = response.headers.get("X-Proxy-Status");
+          const upstreamStatus = response.headers.get("X-Upstream-Status");
+
+          if (proxyStatus === "upstream-error") {
+            // Worker reached Tracker.gg but got a non-2xx response.
+            let errBody = {};
+            try { errBody = await response.clone().json(); } catch (_) {}
+            console.warn(
+              "[Worker] Tracker.gg a retourné HTTP " + (upstreamStatus || "?") +
+              (errBody.body ? " — début: " + errBody.body.substring(0, 120) + "…" : "") +
+              ", basculement sur proxies publics…"
+            );
+            return fetchViaPublicProxies(targetUrl, timeoutMs, options);
+          }
+
+          // Quick JSON sanity check on successful upstream responses.
           try {
             const clone = response.clone();
             JSON.parse(await clone.text());
           } catch (_parseErr) {
             console.warn("[Worker] Réponse non-JSON, basculement sur proxies publics…");
-            // fall through to public proxies below
             return fetchViaPublicProxies(targetUrl, timeoutMs, options);
           }
-          console.info("[Worker] Succès via Cloudflare Worker");
+          console.info("[Worker] Succès via Cloudflare Worker (upstream " + (upstreamStatus || "200") + ")");
           return response;
         }
+
+        // Worker itself returned a non-200 (e.g. 502).
         console.warn("[Worker] HTTP " + response.status + ", basculement sur proxies publics…");
       } catch (e) {
         console.warn("[Worker] Erreur réseau (" + e.message + "), basculement sur proxies publics…");
@@ -382,6 +405,19 @@ function initApp() {
       const response = await fetchViaProxy(targetUrl, FETCH_TIMEOUT_MS);
       const elapsed = Math.round(performance.now() - lbStart);
       if (response.ok) {
+        // With the new Worker format, a 200 response might still carry
+        // an upstream error flag.  Double-check by peeking at the body.
+        try {
+          const body = await response.clone().json();
+          if (body && body.proxyError) {
+            setApiIndicator(
+              "tracker",
+              "error",
+              "Tracker.gg HTTP " + (body.upstreamStatus || "?") + " via " + mode + " — " + elapsed + " ms — redéployez le Worker (cd workers && npx wrangler deploy)",
+            );
+            return;
+          }
+        } catch (_) { /* response is raw upstream JSON — fine */ }
         setApiIndicator("tracker", "ok", "En ligne via " + mode + " — " + elapsed + " ms");
       } else if (response.status === 403) {
         setApiIndicator(
@@ -404,7 +440,7 @@ function initApp() {
         setApiIndicator(
           "tracker",
           "error",
-          "Erreur " + mode + " — " + elapsed + " ms" + (SELF_HOSTED_PROXY_URL ? "" : " — déployez le Worker (voir workers/)"),
+          "Erreur " + mode + " — " + elapsed + " ms" + (SELF_HOSTED_PROXY_URL ? " — redéployez le Worker (cd workers && npx wrangler deploy)" : " — déployez le Worker (voir workers/)"),
         );
       }
     }
@@ -603,6 +639,16 @@ function initApp() {
         "Réponse non-JSON pour " + board + " (début: " + text.substring(0, 80) + "…)",
       );
     }
+
+    // If the Worker wrapped an upstream error in a 200 response,
+    // detect the { proxyError: true } wrapper and report it.
+    if (json && json.proxyError) {
+      throw new Error(
+        "Tracker.gg HTTP " + (json.upstreamStatus || "?") + " pour " + board +
+        " — redéployez le Worker si ce problème persiste",
+      );
+    }
+
     const items = (json.data && json.data.items) || [];
 
     return items.map((item) => ({
