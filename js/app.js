@@ -1,48 +1,63 @@
 /**
  * BF6 Leaderboard — Standalone static web app
  *
- * All configuration, API fetching, normalization, and aggregation
- * logic runs directly in the browser. No backend required.
+ * Fetches leaderboard data from Tracker.gg for Battlefield 6,
+ * normalizes scores to percentiles, and aggregates them into
+ * a composite ranking. Runs directly in the browser.
  */
 
 // ─── Configuration ──────────────────────────────────────────────
+// GameTools API is still used for live player counts.
 const API_BASE_URL = "https://api.gametools.network/bf6";
-const MANAGER_API_URL = "https://api.gametools.network/manager";
-const FETCH_TIMEOUT_MS = 10000;
+
+// Tracker.gg API for leaderboard data.
+const TRACKER_API_URL = "https://api.tracker.gg/api/v2/bf6/standard";
+const FETCH_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
-// Categories available from /manager/leaderboard/ endpoint.
-// The sort parameter values accepted by the API and the corresponding
-// response fields are listed below.
-const LEADERBOARD_CATEGORIES = [
-  "kills",
-  "deaths",
-  "wins",
-  "losses",
-  "killDeath",
-  "score",
-  "timePlayed",
+// Available leaderboard boards (metrics) on Tracker.gg.
+// Each board represents one stat that players can be ranked by.
+const LEADERBOARD_BOARDS = [
+  { value: "MatchesWon", label: "Parties gagnées" },
+  { value: "MatchesPlayed", label: "Parties jouées" },
+  { value: "Kills", label: "Victimes" },
+  { value: "Deaths", label: "Morts" },
+  { value: "Assists", label: "Assistances" },
+  { value: "KDRatio", label: "Ratio K/D" },
+  { value: "WLPercentage", label: "% Victoires" },
+  { value: "Score", label: "Score" },
+  { value: "TimePlayed", label: "Temps joué" },
+  { value: "KillsPerMinute", label: "Victimes/min" },
+  { value: "ScorePerMinute", label: "Score/min" },
 ];
 
-// Maps each category to the sort query-parameter value expected by the
-// /manager/leaderboard/ API.
-const CATEGORY_TO_SORT = {
-  kills: "kills",
-  deaths: "deaths",
-  wins: "wins",
-  losses: "losses",
-  killDeath: "killdeath",
-  score: "score",
-  timePlayed: "timeplayed",
-};
+// Available gamemodes on Tracker.gg.
+const GAMEMODES = [
+  { value: "gm_strike", label: "Strike" },
+  { value: "gm_conquest", label: "Conquête" },
+  { value: "gm_breakthrough", label: "Percée" },
+  { value: "gm_rush", label: "Ruée" },
+];
 
-const LOWER_IS_BETTER = ["deaths", "losses"];
+// Available platforms on Tracker.gg.
+const PLATFORMS = [
+  { value: "all", label: "Toutes" },
+  { value: "origin", label: "PC (EA)" },
+  { value: "psn", label: "PlayStation" },
+  { value: "xbl", label: "Xbox" },
+  { value: "steam", label: "Steam" },
+];
+
+// Boards where a lower value is better (player with least deaths is best).
+const LOWER_IS_BETTER = ["Deaths"];
 
 // ─── Initialization ─────────────────────────────────────────────
 // Use readyState check so the app works even if DOMContentLoaded already fired
 function initApp() {
   const fetchBtn = document.getElementById("fetch-btn");
-  const amountSelect = document.getElementById("amount");
+  const gamemodeSelect = document.getElementById("gamemode");
+  const platformSelect = document.getElementById("platform");
+  const pagesSelect = document.getElementById("pages");
   const loadingEl = document.getElementById("loading");
   const errorEl = document.getElementById("error");
   const summaryEl = document.getElementById("summary");
@@ -62,30 +77,52 @@ function initApp() {
   // ─── Fetch with timeout helper ─────────────────────────────
   // Uses AbortSignal.timeout when available, with a fallback for
   // older browsers that only support AbortController.
-  function fetchWithTimeout(url, timeoutMs) {
+  function fetchWithTimeout(url, timeoutMs, options) {
     const ms = timeoutMs || FETCH_TIMEOUT_MS;
+    const baseOpts = options || {};
     if (typeof AbortSignal.timeout === "function") {
-      return fetch(url, { signal: AbortSignal.timeout(ms) });
+      return fetch(url, Object.assign({}, baseOpts, { signal: AbortSignal.timeout(ms) }));
     }
     const controller = new AbortController();
     setTimeout(() => controller.abort(), ms);
-    return fetch(url, { signal: controller.signal });
+    return fetch(url, Object.assign({}, baseOpts, { signal: controller.signal }));
   }
 
-  // ─── Populate categories from config ────────────────────────
-  // If HTML already contains fallback checkboxes, verify they match config.
-  // Otherwise (or if empty), rebuild them from the JS config.
+  // ─── Populate selectors from config ─────────────────────────
+  // Populate gamemode dropdown
+  if (gamemodeSelect && gamemodeSelect.options.length <= 1) {
+    gamemodeSelect.innerHTML = "";
+    GAMEMODES.forEach((gm) => {
+      const opt = document.createElement("option");
+      opt.value = gm.value;
+      opt.textContent = gm.label;
+      gamemodeSelect.appendChild(opt);
+    });
+  }
+
+  // Populate platform dropdown
+  if (platformSelect && platformSelect.options.length <= 1) {
+    platformSelect.innerHTML = "";
+    PLATFORMS.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.value;
+      opt.textContent = p.label;
+      platformSelect.appendChild(opt);
+    });
+  }
+
+  // Populate board checkboxes
   const fallbackCheckboxes = categoriesGrid.querySelectorAll('input[type="checkbox"]');
-  if (fallbackCheckboxes.length !== LEADERBOARD_CATEGORIES.length) {
+  if (fallbackCheckboxes.length !== LEADERBOARD_BOARDS.length) {
     categoriesGrid.innerHTML = "";
-    LEADERBOARD_CATEGORIES.forEach((cat) => {
+    LEADERBOARD_BOARDS.forEach((board) => {
       const label = document.createElement("label");
       label.className = "checkbox-label";
       label.innerHTML =
         '<input type="checkbox" name="category" value="' +
-        escapeHtml(cat) +
+        escapeHtml(board.value) +
         '" checked><span>' +
-        escapeHtml(cat) +
+        escapeHtml(board.label) +
         "</span>";
       categoriesGrid.appendChild(label);
     });
@@ -130,13 +167,13 @@ function initApp() {
     const timeEl = document.getElementById("api-status-time");
 
     setApiIndicator("main", "checking", "Vérification...");
-    setApiIndicator("leaderboard", "checking", "Vérification...");
+    setApiIndicator("tracker", "checking", "Vérification...");
     setApiIndicator("players", "checking", "Vérification...");
 
     // Run all three checks in parallel so none stays at "Vérification..." while others complete
     await Promise.allSettled([
       checkMainApi(),
-      checkLeaderboardApi(),
+      checkTrackerApi(),
       checkPlayersApi(),
     ]);
 
@@ -182,19 +219,33 @@ function initApp() {
     }
   }
 
-  async function checkLeaderboardApi() {
+  async function checkTrackerApi() {
     const lbStart = performance.now();
     try {
       const response = await fetchWithTimeout(
-        MANAGER_API_URL + "/leaderboard/?sort=kills&amount=1",
+        TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1",
         FETCH_TIMEOUT_MS,
+        {
+          credentials: "include",
+          headers: {
+            Accept: "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            Referer: "https://tracker.gg/",
+          },
+        },
       );
       const elapsed = Math.round(performance.now() - lbStart);
       if (response.ok) {
-        setApiIndicator("leaderboard", "ok", "En ligne — " + elapsed + " ms");
+        setApiIndicator("tracker", "ok", "En ligne — " + elapsed + " ms");
+      } else if (response.status === 403) {
+        setApiIndicator(
+          "tracker",
+          "error",
+          "Bloqué (403) — Visitez tracker.gg d'abord — " + elapsed + " ms",
+        );
       } else {
         setApiIndicator(
-          "leaderboard",
+          "tracker",
           "error",
           "Erreur HTTP " + response.status + " — " + elapsed + " ms",
         );
@@ -202,12 +253,12 @@ function initApp() {
     } catch (e) {
       const elapsed = Math.round(performance.now() - lbStart);
       if (e.name === "TimeoutError" || e.name === "AbortError") {
-        setApiIndicator("leaderboard", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
+        setApiIndicator("tracker", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
       } else {
         setApiIndicator(
-          "leaderboard",
+          "tracker",
           "error",
-          "Erreur réseau — " + elapsed + " ms",
+          "Erreur réseau / CORS — " + elapsed + " ms",
         );
       }
     }
@@ -316,16 +367,18 @@ function initApp() {
   }
 
   async function fetchLeaderboard() {
-    const amount = parseInt(amountSelect.value, 10);
+    const gamemode = gamemodeSelect.value;
+    const platform = platformSelect.value;
+    const pages = parseInt(pagesSelect.value, 10);
 
-    const selectedCategories = Array.from(
+    const selectedBoards = Array.from(
       document.querySelectorAll(
         '#categories-grid input[type="checkbox"]:checked',
       ),
     ).map((cb) => cb.value);
 
-    if (selectedCategories.length === 0) {
-      showError("Veuillez sélectionner au moins une catégorie.");
+    if (selectedBoards.length === 0) {
+      showError("Veuillez sélectionner au moins un critère (board).");
       return;
     }
 
@@ -337,8 +390,10 @@ function initApp() {
 
     try {
       const data = await aggregateLeaderboard(
-        selectedCategories,
-        amount,
+        selectedBoards,
+        gamemode,
+        platform,
+        pages,
       );
       currentData = data;
 
@@ -347,7 +402,7 @@ function initApp() {
       if (!data.players || data.players.length === 0) {
         if (data.failed_categories === data.total_categories) {
           showError(
-            "L'API GameTools est inaccessible. Toutes les catégories ont échoué. Vérifiez le statut de l'API ci-dessus et réessayez plus tard.",
+            "Tracker.gg est inaccessible ou bloqué par CORS. Assurez-vous d'avoir visité tracker.gg récemment dans ce navigateur, puis réessayez.",
           );
         } else {
           showError(
@@ -368,58 +423,83 @@ function initApp() {
     }
   }
 
-  // ─── API Fetching ───────────────────────────────────────────
-  async function fetchCategoryLeaderboard(
-    category,
-    amount,
-  ) {
-    const sortValue = CATEGORY_TO_SORT[category] || category;
+  // ─── API Fetching (Tracker.gg) ────────────────────────────────
+  // Fetches a single page of leaderboard data from Tracker.gg.
+  // Returns an array of { name, value, rank } objects.
+  async function fetchTrackerPage(board, gamemode, platform, page) {
     const params = new URLSearchParams({
-      sort: sortValue,
-      amount: String(amount),
+      type: "gamemodes",
+      platform: platform,
+      board: board,
+      gamemode: gamemode,
+      page: String(page),
     });
 
-    const url = MANAGER_API_URL + "/leaderboard/?" + params.toString();
-    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
+    const url = TRACKER_API_URL + "/leaderboards?" + params.toString();
+    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS, {
+      credentials: "include",
+      headers: {
+        Accept: "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://tracker.gg/",
+      },
+    });
 
     if (!response.ok) {
       throw new Error(
-        "Erreur API pour " + category + " (HTTP " + response.status + ")",
+        "Erreur Tracker.gg pour " + board + " (HTTP " + response.status + ")",
       );
     }
 
-    const data = await response.json();
-    return data.data || [];
+    const json = await response.json();
+    const items = (json.data && json.data.items) || [];
+
+    return items.map((item) => ({
+      name: (item.owner && item.owner.displayName) || "Unknown",
+      value: item.value != null ? item.value : 0,
+      rank: item.rank || 0,
+    }));
+  }
+
+  // Fetches all pages for a single board and merges them.
+  async function fetchBoardLeaderboard(board, gamemode, platform, pages) {
+    const allEntries = [];
+
+    for (let page = 1; page <= pages; page++) {
+      const entries = await fetchTrackerPage(board, gamemode, platform, page);
+      allEntries.push.apply(allEntries, entries);
+      if (entries.length === 0) break; // No more data
+    }
+
+    return allEntries;
   }
 
   // ─── Normalization ──────────────────────────────────────────
-  function normalizeScores(players, category) {
-    if (!players || players.length === 0) {
+  // Takes an array of { name, value } entries for a single board
+  // and converts each value to a 0–100 percentile.
+  function normalizeEntries(entries, board) {
+    if (!entries || entries.length === 0) {
       return {};
     }
 
-    const values = players
-      .filter((p) => p[category] != null)
-      .map((p) => ({
-        name: p.name || "Unknown",
-        value: p[category],
-      }))
+    const sorted = entries
+      .slice()
       .sort((a, b) => a.value - b.value);
 
-    const total = values.length;
+    const total = sorted.length;
     if (total <= 1) {
       const result = {};
-      result[values[0].name] = 100;
+      result[sorted[0].name] = 100;
       return result;
     }
 
     const normalized = {};
     for (let rank = 0; rank < total; rank++) {
       let percentile = (rank / (total - 1)) * 100;
-      if (LOWER_IS_BETTER.includes(category)) {
+      if (LOWER_IS_BETTER.includes(board)) {
         percentile = 100 - percentile;
       }
-      normalized[values[rank].name] = Math.round(percentile * 100) / 100;
+      normalized[sorted[rank].name] = Math.round(percentile * 100) / 100;
     }
 
     return normalized;
@@ -427,64 +507,55 @@ function initApp() {
 
   // ─── Aggregation ────────────────────────────────────────────
   async function aggregateLeaderboard(
-    categories,
-    amount,
+    boards,
+    gamemode,
+    platform,
+    pages,
   ) {
-    const totalCats = categories.length;
+    const totalBoards = boards.length;
     let completed = 0;
 
-    updateProgress(0, totalCats);
+    updateProgress(0, totalBoards);
 
-    // Fetch top players for each category (sorted by that category).
-    // The /manager/leaderboard/ endpoint returns ALL stats per player,
-    // so we merge results afterwards to get a complete picture.
-    const categoryResults = await Promise.all(
-      categories.map(async (cat) => {
+    // Fetch leaderboard entries for each selected board in parallel.
+    const boardResults = await Promise.all(
+      boards.map(async (board) => {
         try {
-          const players = await fetchCategoryLeaderboard(
-            cat,
-            amount,
+          const entries = await fetchBoardLeaderboard(
+            board,
+            gamemode,
+            platform,
+            pages,
           );
           completed++;
-          updateProgress(completed, totalCats);
-          return { category: cat, players: players, error: false };
+          updateProgress(completed, totalBoards);
+          return { board: board, entries: entries, error: false };
         } catch (err) {
           completed++;
-          updateProgress(completed, totalCats);
-          console.warn("Erreur pour la catégorie " + cat + ":", err);
-          return { category: cat, players: [], error: true };
+          updateProgress(completed, totalBoards);
+          console.warn("Erreur pour le board " + board + ":", err);
+          return { board: board, entries: [], error: true };
         }
       }),
     );
 
-    const failedCount = categoryResults.filter((r) => r.error).length;
+    const failedCount = boardResults.filter((r) => r.error).length;
 
-    // Merge all players from every category fetch into a single map.
-    // Each player already has all stats in every response (the sort
-    // parameter only changes the order), so the first occurrence is
-    // sufficient and later duplicates are skipped.
-    const mergedPlayers = {};
-    for (const result of categoryResults) {
-      for (const p of result.players) {
-        const name = p.name || "Unknown";
-        if (!mergedPlayers[name]) {
-          mergedPlayers[name] = p;
-        }
+    // Normalize each board independently
+    const normalizedByBoard = {};
+    for (const result of boardResults) {
+      if (!result.error && result.entries.length > 0) {
+        normalizedByBoard[result.board] = normalizeEntries(
+          result.entries,
+          result.board,
+        );
       }
-    }
-
-    const allPlayers = Object.values(mergedPlayers);
-
-    // Normalize each selected category across the merged player set
-    const normalizedByCategory = {};
-    for (const cat of categories) {
-      normalizedByCategory[cat] = normalizeScores(allPlayers, cat);
     }
 
     // Aggregate: sum normalized scores per player
     const playerScores = {};
-    for (const cat of categories) {
-      const scores = normalizedByCategory[cat] || {};
+    for (const board of boards) {
+      const scores = normalizedByBoard[board] || {};
       for (const [playerName, score] of Object.entries(scores)) {
         if (!playerScores[playerName]) {
           playerScores[playerName] = {
@@ -495,7 +566,7 @@ function initApp() {
           };
         }
         playerScores[playerName].total_score += score;
-        playerScores[playerName].categories[cat] = score;
+        playerScores[playerName].categories[board] = score;
         playerScores[playerName].categories_count += 1;
       }
     }
@@ -517,11 +588,18 @@ function initApp() {
           : 0;
     }
 
+    // Build display labels for boards (used in rendering)
+    const boardLabels = {};
+    for (const b of LEADERBOARD_BOARDS) {
+      boardLabels[b.value] = b.label;
+    }
+
     return {
       players: sortedPlayers,
-      categories: categories,
-      max_possible_score: categories.length * 100,
-      total_categories: categories.length,
+      categories: boards,
+      categoryLabels: boardLabels,
+      max_possible_score: boards.length * 100,
+      total_categories: boards.length,
       failed_categories: failedCount,
     };
   }
@@ -539,6 +617,7 @@ function initApp() {
     leaderboardBody.innerHTML = "";
 
     const maxScore = data.max_possible_score || 1;
+    const labels = data.categoryLabels || {};
 
     data.players.forEach((player) => {
       // Main row
@@ -593,11 +672,12 @@ function initApp() {
       let barsHtml = '<div class="category-bars">';
       data.categories.forEach((cat) => {
         const catScore = player.categories[cat];
+        const displayName = labels[cat] || cat;
         if (catScore !== undefined) {
           barsHtml +=
             '<div class="category-bar-item">' +
             '<span class="category-bar-name">' +
-            escapeHtml(cat) +
+            escapeHtml(displayName) +
             "</span>" +
             '<div class="category-bar-visual">' +
             '<div class="category-bar-visual-fill" style="width: ' +
@@ -612,7 +692,7 @@ function initApp() {
           barsHtml +=
             '<div class="category-bar-item">' +
             '<span class="category-bar-name">' +
-            escapeHtml(cat) +
+            escapeHtml(displayName) +
             "</span>" +
             '<div class="category-bar-visual">' +
             '<div class="category-bar-visual-fill" style="width: 0%"></div>' +
@@ -729,7 +809,7 @@ function initApp() {
     const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
     progressBar.style.width = pct + "%";
     progressText.textContent =
-      "Chargement des catégories: " + completed + " / " + total;
+      "Chargement des critères: " + completed + " / " + total;
   }
 
   function showError(message) {
