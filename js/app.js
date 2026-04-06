@@ -98,6 +98,10 @@ function initApp() {
     return proxy.prefix + (proxy.encode ? encodeURIComponent(url) : url);
   }
 
+  // Index of the last proxy that returned a valid response.
+  // Subsequent calls try this proxy first to avoid repeatedly hitting dead ones.
+  var lastWorkingProxyIndex = 0;
+
   // ─── Fetch with timeout helper ─────────────────────────────
   // Uses AbortSignal.timeout when available, with a fallback for
   // older browsers that only support AbortController.
@@ -113,11 +117,16 @@ function initApp() {
   }
 
   // ─── Fetch through CORS proxy with fallback ────────────────
-  // Tries each configured proxy in order. Returns the first successful
-  // (non-403) response. Throws if all proxies fail.
+  // Tries each configured proxy in order, starting from the last
+  // one that worked.  Returns the first successful response whose
+  // body looks like JSON (not an HTML error page).
+  // Throws if all proxies fail.
   async function fetchViaProxy(targetUrl, timeoutMs, options) {
     let lastError = null;
-    for (let i = 0; i < CORS_PROXIES.length; i++) {
+    const total = CORS_PROXIES.length;
+
+    for (let attempt = 0; attempt < total; attempt++) {
+      const i = (lastWorkingProxyIndex + attempt) % total;
       const proxy = CORS_PROXIES[i];
       const url = proxiedUrl(targetUrl, proxy);
       try {
@@ -127,7 +136,17 @@ function initApp() {
           lastError = new Error("Proxy " + proxy.prefix + " returned 403");
           continue; // try next proxy
         }
-        if (i > 0) {
+        // Guard against proxies that return their own HTML error page
+        // with a 200 status code instead of forwarding the upstream response.
+        const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("text/html")) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → réponse HTML au lieu de JSON, essai suivant…");
+          lastError = new Error("Proxy " + proxy.prefix + " returned HTML instead of JSON");
+          continue;
+        }
+        // Remember this working proxy for future calls.
+        lastWorkingProxyIndex = i;
+        if (attempt > 0) {
           console.info("[CORS] Succès via proxy de secours : " + proxy.prefix);
         }
         return response;
@@ -137,7 +156,7 @@ function initApp() {
         // network / timeout error — try next proxy
       }
     }
-    throw lastError || new Error("Tous les proxies CORS ont échoué (" + CORS_PROXIES.length + " essayés)");
+    throw lastError || new Error("Tous les proxies CORS ont échoué (" + total + " essayés)");
   }
 
   // ─── Populate selectors from config ─────────────────────────
@@ -487,7 +506,15 @@ function initApp() {
       );
     }
 
-    const json = await response.json();
+    const text = await response.text();
+    var json;
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      throw new Error(
+        "Réponse non-JSON pour " + board + " (début: " + text.substring(0, 80) + "…)",
+      );
+    }
     const items = (json.data && json.data.items) || [];
 
     return items.map((item) => ({
