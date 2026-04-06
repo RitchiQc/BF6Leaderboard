@@ -30,15 +30,15 @@
                     <div class="api-status-item" id="api-status-main">
                         <span class="api-status-indicator checking" id="api-indicator-main">⏳</span>
                         <div class="api-status-info">
-                            <span class="api-status-name">API GameTools</span>
+                            <span class="api-status-name">API GameTools (joueurs)</span>
                             <span class="api-status-detail" id="api-detail-main">Vérification...</span>
                         </div>
                     </div>
-                    <div class="api-status-item" id="api-status-leaderboard">
-                        <span class="api-status-indicator checking" id="api-indicator-leaderboard">⏳</span>
+                    <div class="api-status-item" id="api-status-tracker">
+                        <span class="api-status-indicator checking" id="api-indicator-tracker">⏳</span>
                         <div class="api-status-info">
-                            <span class="api-status-name">Classement (Leaderboard)</span>
-                            <span class="api-status-detail" id="api-detail-leaderboard">Vérification...</span>
+                            <span class="api-status-name">Tracker.gg (Leaderboard)</span>
+                            <span class="api-status-detail" id="api-detail-tracker">Vérification...</span>
                         </div>
                     </div>
                     <div class="api-status-item" id="api-status-players">
@@ -49,6 +49,11 @@
                         </div>
                     </div>
                 </div>
+                <p class="api-status-note">
+                    ⚠️ Tracker.gg nécessite des cookies de session. Si le statut est « Bloqué »,
+                    <a href="https://tracker.gg/bf6/leaderboards/gamemodes" target="_blank" rel="noopener noreferrer">visitez tracker.gg</a>
+                    dans ce navigateur d'abord, puis revenez ici.
+                </p>
                 <div class="api-status-footer">
                     <span id="api-status-time" class="api-status-time"></span>
                     <button type="button" id="api-recheck-btn" class="btn-small">🔄 Revérifier</button>
@@ -58,30 +63,40 @@
 
         <!-- Filters -->
         <section class="filters">
-            <div class="filter-group">
-                <label for="amount">Joueurs par catégorie</label>
-                <select id="amount">
-                    <option value="50">50</option>
-                    <option value="100" selected>100</option>
-                    <option value="200">200</option>
-                </select>
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label for="platform">Plateforme</label>
+                    <select id="platform">
+                        <option value="all" selected>Toutes</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="gamemode">Mode de jeu</label>
+                    <select id="gamemode">
+                        <option value="gm_strike">Strike</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="pages">Pages à charger</label>
+                    <select id="pages">
+                        <option value="1">1 page (~100 joueurs)</option>
+                        <option value="2">2 pages (~200 joueurs)</option>
+                        <option value="3" selected>3 pages (~300 joueurs)</option>
+                        <option value="5">5 pages (~500 joueurs)</option>
+                    </select>
+                </div>
             </div>
 
             <div class="filter-group filter-categories">
-                <label>Catégories</label>
+                <label>Critères (Boards)</label>
                 <div class="categories-toggle">
                     <button type="button" id="select-all-cats" class="btn-small">Tout sélectionner</button>
                     <button type="button" id="deselect-all-cats" class="btn-small">Tout désélectionner</button>
                 </div>
                 <div class="categories-grid" id="categories-grid">
-                    <!-- Fallback checkboxes: must match LEADERBOARD_CATEGORIES in js/app.js -->
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="kills" checked><span>kills</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="deaths" checked><span>deaths</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="wins" checked><span>wins</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="losses" checked><span>losses</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="killDeath" checked><span>killDeath</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="score" checked><span>score</span></label>
-                    <label class="checkbox-label"><input type="checkbox" name="category" value="timePlayed" checked><span>timePlayed</span></label>
+                    <!-- Rebuilt from JS config -->
                 </div>
             </div>
 
@@ -127,9 +142,11 @@
         <section id="leaderboard-section" class="hidden">
             <h2>📊 Classement Agrégé</h2>
             <p class="explanation">
-                Chaque catégorie est normalisée sur une échelle de 0 à 100 (percentile).
-                Le score total est la somme de toutes les catégories.
+                Chaque critère (board) est normalisé sur une échelle de 0 à 100 (percentile).
+                Le score total est la somme de tous les critères sélectionnés.
                 Plus le score est élevé, meilleur est le joueur globalement.
+                <br>
+                <small>Données issues de <a href="https://tracker.gg/bf6" target="_blank" rel="noopener noreferrer">Tracker.gg</a>.</small>
             </p>
             <div class="table-wrapper">
                 <table id="leaderboard-table">
@@ -152,7 +169,7 @@
 
     <footer>
         <div class="container">
-            <p>BF6 Leaderboard — Données via <a href="https://api.gametools.network/" target="_blank" rel="noopener noreferrer">GameTools API</a></p>
+            <p>BF6 Leaderboard — Données via <a href="https://tracker.gg/bf6" target="_blank" rel="noopener noreferrer">Tracker.gg</a> | Joueurs en ligne via <a href="https://api.gametools.network/" target="_blank" rel="noopener noreferrer">GameTools API</a></p>
         </div>
     </footer>
 
@@ -161,6 +178,6 @@
             JavaScript est requis pour utiliser BF6 Leaderboard. Veuillez activer JavaScript dans votre navigateur.
         </div>
     </noscript>
-    <script src="js/app.js?v=3"></script>
+    <script src="js/app.js?v=4"></script>
 </body>
 </html>
