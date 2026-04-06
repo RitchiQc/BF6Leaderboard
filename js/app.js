@@ -158,6 +158,19 @@ function initApp() {
             lastError = new Error("Proxy " + proxy.prefix + " returned unexpected content-type (" + contentType + ")");
             continue;
           }
+          // Validate that the body is actually parseable JSON.
+          // Some proxies return 200 with a JSON-like content-type but the body
+          // is HTML or an error message.  Clone the response so the caller can
+          // still read the original body.
+          try {
+            const clone = response.clone();
+            const bodyText = await clone.text();
+            JSON.parse(bodyText); // throws if not valid JSON
+          } catch (_parseErr) {
+            console.warn("[CORS] Proxy " + proxy.prefix + " → corps de réponse non-JSON, essai suivant…");
+            lastError = new Error("Proxy " + proxy.prefix + " returned non-JSON body");
+            continue;
+          }
           // Remember this working proxy for future calls.
           lastWorkingProxyIndex = i;
           if (attempt > 0 || round > 0) {
