@@ -14,12 +14,18 @@
 // Only allow proxying to these domains (security measure).
 const ALLOWED_HOSTS = ["api.tracker.gg"];
 
+// User-Agent sent to upstream APIs. Uses a recent browser string so
+// that Tracker.gg treats the request like a normal visitor.
+const UPSTREAM_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
 // CORS headers added to every response.
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Expose-Headers": "X-Proxy-Status",
     "Access-Control-Max-Age": "86400",
   };
 }
@@ -97,20 +103,27 @@ async function handleProxy(request, url) {
 
   try {
     // Fetch from Tracker.gg server-side (no CORS restrictions).
+    // Tracker.gg expects requests to look like they come from its own
+    // website, so we set Referer / Origin accordingly.
     const response = await fetch(targetUrl.toString(), {
       headers: {
-        "User-Agent": "BF6Leaderboard/1.0",
-        Accept: "application/json",
+        "User-Agent": UPSTREAM_USER_AGENT,
+        Accept: "application/json, text/plain, */*",
+        Referer: "https://tracker.gg/",
+        Origin: "https://tracker.gg",
       },
     });
 
     // Forward the upstream response with CORS headers.
+    // Include X-Proxy-Status so the front-end can distinguish a
+    // worker-level error from an upstream error.
     const body = await response.text();
     return new Response(body, {
       status: response.status,
       headers: {
         ...headers,
         "Content-Type": response.headers.get("Content-Type") || "application/json",
+        "X-Proxy-Status": "upstream-" + response.status,
       },
     });
   } catch (err) {
