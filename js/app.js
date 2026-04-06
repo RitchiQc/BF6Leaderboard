@@ -12,7 +12,7 @@ const API_BASE_URL = "https://api.gametools.network/bf6";
 
 // Tracker.gg API for leaderboard data.
 const TRACKER_API_URL = "https://api.tracker.gg/api/v2/bf6/standard";
-const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_MS = 10000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
 // CORS proxies used to reach Tracker.gg from the browser.
@@ -25,11 +25,15 @@ const CORS_PROXIES = [
   { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
   { prefix: "https://corsproxy.org/?url=", encode: true },
   { prefix: "https://cors.eu.org/", encode: false },
+  { prefix: "https://test.cors.workers.dev/?", encode: false },
+  { prefix: "https://yacdn.org/proxy/", encode: false },
+  { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
+  { prefix: "https://crossproxy.me/", encode: false },
 ];
 
 // Maximum number of retry rounds for the full proxy list.
-// A second round helps recover from transient failures (rate limits, timeouts).
-const PROXY_RETRY_ROUNDS = 2;
+// Extra rounds help recover from transient failures (rate limits, timeouts).
+const PROXY_RETRY_ROUNDS = 3;
 const PROXY_RETRY_DELAY_MS = 3000;
 
 // Available leaderboard boards (metrics) on Tracker.gg.
@@ -138,7 +142,8 @@ function initApp() {
         const url = proxiedUrl(targetUrl, proxy);
         try {
           const response = await fetchWithTimeout(url, timeoutMs, options);
-          if (response.status === 403 || response.status === 408 || response.status === 429) {
+          if (response.status === 403 || response.status === 408 || response.status === 429
+              || response.status === 500 || response.status === 502 || response.status === 503 || response.status === 504) {
             console.warn("[CORS] Proxy " + proxy.prefix + " → " + response.status + ", essai suivant…");
             lastError = new Error("Proxy " + proxy.prefix + " returned " + response.status);
             continue; // try next proxy
