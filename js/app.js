@@ -7,31 +7,34 @@
 
 // ─── Configuration ──────────────────────────────────────────────
 const API_BASE_URL = "https://api.gametools.network/bf6";
+const MANAGER_API_URL = "https://api.gametools.network/manager";
 const FETCH_TIMEOUT_MS = 10000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
+// Categories available from /manager/leaderboard/ endpoint.
+// The sort parameter values accepted by the API and the corresponding
+// response fields are listed below.
 const LEADERBOARD_CATEGORIES = [
   "kills",
   "deaths",
   "wins",
   "losses",
-  "assists",
-  "revives",
-  "headshots",
-  "killsPerMinute",
-  "damagePerMinute",
-  "scorePerMinute",
-  "winPercent",
   "killDeath",
-  "infantryKillDeath",
-  "bestSquad",
-  "vehiclesDestroyed",
-  "saviorKills",
-  "avengerKills",
-  "spotEnemies",
-  "objectiveTime",
+  "score",
   "timePlayed",
 ];
+
+// Maps each category to the sort query-parameter value expected by the
+// /manager/leaderboard/ API.
+const CATEGORY_TO_SORT = {
+  kills: "kills",
+  deaths: "deaths",
+  wins: "wins",
+  losses: "losses",
+  killDeath: "killdeath",
+  score: "score",
+  timePlayed: "timeplayed",
+};
 
 const LOWER_IS_BETTER = ["deaths", "losses"];
 
@@ -39,8 +42,6 @@ const LOWER_IS_BETTER = ["deaths", "losses"];
 // Use readyState check so the app works even if DOMContentLoaded already fired
 function initApp() {
   const fetchBtn = document.getElementById("fetch-btn");
-  const gameModeSelect = document.getElementById("game-mode");
-  const platformSelect = document.getElementById("platform");
   const amountSelect = document.getElementById("amount");
   const loadingEl = document.getElementById("loading");
   const errorEl = document.getElementById("error");
@@ -185,7 +186,7 @@ function initApp() {
     const lbStart = performance.now();
     try {
       const response = await fetchWithTimeout(
-        API_BASE_URL + "/leaderboard/?name=kills&platform=pc&skip=0&amount=1",
+        MANAGER_API_URL + "/leaderboard/?sort=kills&amount=1",
         FETCH_TIMEOUT_MS,
       );
       const elapsed = Math.round(performance.now() - lbStart);
@@ -315,8 +316,6 @@ function initApp() {
   }
 
   async function fetchLeaderboard() {
-    const gameMode = gameModeSelect.value;
-    const platform = platformSelect.value;
     const amount = parseInt(amountSelect.value, 10);
 
     const selectedCategories = Array.from(
@@ -339,8 +338,6 @@ function initApp() {
     try {
       const data = await aggregateLeaderboard(
         selectedCategories,
-        platform,
-        gameMode,
         amount,
       );
       currentData = data;
@@ -374,22 +371,15 @@ function initApp() {
   // ─── API Fetching ───────────────────────────────────────────
   async function fetchCategoryLeaderboard(
     category,
-    platform,
-    gameMode,
     amount,
   ) {
+    const sortValue = CATEGORY_TO_SORT[category] || category;
     const params = new URLSearchParams({
-      name: category,
-      platform: platform,
-      skip: "0",
+      sort: sortValue,
       amount: String(amount),
     });
 
-    if (gameMode && gameMode !== "all") {
-      params.set("gamemode", gameMode);
-    }
-
-    const url = API_BASE_URL + "/leaderboard/?" + params.toString();
+    const url = MANAGER_API_URL + "/leaderboard/?" + params.toString();
     const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
 
     if (!response.ok) {
@@ -411,7 +401,7 @@ function initApp() {
     const values = players
       .map((p) => ({
         name: p.name || "Unknown",
-        value: p.value || 0,
+        value: p[category] != null ? p[category] : 0,
       }))
       .sort((a, b) => a.value - b.value);
 
@@ -437,8 +427,6 @@ function initApp() {
   // ─── Aggregation ────────────────────────────────────────────
   async function aggregateLeaderboard(
     categories,
-    platform,
-    gameMode,
     amount,
   ) {
     const totalCats = categories.length;
@@ -446,14 +434,14 @@ function initApp() {
 
     updateProgress(0, totalCats);
 
-    // Fetch all categories concurrently with progress tracking
+    // Fetch top players for each category (sorted by that category).
+    // The /manager/leaderboard/ endpoint returns ALL stats per player,
+    // so we merge results afterwards to get a complete picture.
     const categoryResults = await Promise.all(
       categories.map(async (cat) => {
         try {
           const players = await fetchCategoryLeaderboard(
             cat,
-            platform,
-            gameMode,
             amount,
           );
           completed++;
@@ -470,13 +458,24 @@ function initApp() {
 
     const failedCount = categoryResults.filter((r) => r.error).length;
 
-    // Normalize each category
-    const normalizedByCategory = {};
+    // Merge all players from every category fetch into a single map.
+    // Each player already has all stats, so later fetches just update.
+    const mergedPlayers = {};
     for (const result of categoryResults) {
-      normalizedByCategory[result.category] = normalizeScores(
-        result.players,
-        result.category,
-      );
+      for (const p of result.players) {
+        const name = p.name || "Unknown";
+        if (!mergedPlayers[name]) {
+          mergedPlayers[name] = p;
+        }
+      }
+    }
+
+    const allPlayers = Object.values(mergedPlayers);
+
+    // Normalize each selected category across the merged player set
+    const normalizedByCategory = {};
+    for (const cat of categories) {
+      normalizedByCategory[cat] = normalizeScores(allPlayers, cat);
     }
 
     // Aggregate: sum normalized scores per player
