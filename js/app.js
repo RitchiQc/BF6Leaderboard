@@ -399,9 +399,10 @@ function initApp() {
     }
 
     const values = players
+      .filter((p) => p[category] != null)
       .map((p) => ({
         name: p.name || "Unknown",
-        value: p[category] != null ? p[category] : 0,
+        value: p[category],
       }))
       .sort((a, b) => a.value - b.value);
 
@@ -459,7 +460,9 @@ function initApp() {
     const failedCount = categoryResults.filter((r) => r.error).length;
 
     // Merge all players from every category fetch into a single map.
-    // Each player already has all stats, so later fetches just update.
+    // Each player already has all stats in every response (the sort
+    // parameter only changes the order), so the first occurrence is
+    // sufficient and later duplicates are skipped.
     const mergedPlayers = {};
     for (const result of categoryResults) {
       for (const p of result.players) {
