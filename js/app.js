@@ -23,6 +23,13 @@ const CORS_PROXIES = [
   { prefix: "https://corsproxy.io/?url=", encode: true },
   { prefix: "https://api.allorigins.win/raw?url=", encode: true },
   { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
+  { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
+  { prefix: "https://corsproxy.org/?", encode: true },
+  { prefix: "https://proxy.cors.sh/", encode: false },
+  { prefix: "https://api.cors.lol/?url=", encode: true },
+  { prefix: "https://corsanywhere.net/", encode: false },
+  { prefix: "https://cors.eu.org/", encode: false },
+  { prefix: "https://yacdn.org/proxy/", encode: false },
 ];
 
 // Available leaderboard boards (metrics) on Tracker.gg.
@@ -116,16 +123,21 @@ function initApp() {
       try {
         const response = await fetchWithTimeout(url, timeoutMs, options);
         if (response.status === 403) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → 403, essai suivant…");
           lastError = new Error("Proxy " + proxy.prefix + " returned 403");
           continue; // try next proxy
         }
+        if (i > 0) {
+          console.info("[CORS] Succès via proxy de secours : " + proxy.prefix);
+        }
         return response;
       } catch (e) {
+        console.warn("[CORS] Proxy " + proxy.prefix + " → erreur réseau, essai suivant…");
         lastError = e;
         // network / timeout error — try next proxy
       }
     }
-    throw lastError || new Error("Tous les proxies CORS ont échoué");
+    throw lastError || new Error("Tous les proxies CORS ont échoué (" + CORS_PROXIES.length + " essayés)");
   }
 
   // ─── Populate selectors from config ─────────────────────────
