@@ -95,13 +95,13 @@ function initApp() {
   // Uses AbortSignal.timeout when available, with a fallback for
   // older browsers that only support AbortController.
   function fetchWithTimeout(url, timeoutMs, options) {
-    var ms = timeoutMs || FETCH_TIMEOUT_MS;
-    var baseOpts = options || {};
+    const ms = timeoutMs || FETCH_TIMEOUT_MS;
+    const baseOpts = options || {};
     if (typeof AbortSignal.timeout === "function") {
       return fetch(url, Object.assign({}, baseOpts, { signal: AbortSignal.timeout(ms) }));
     }
-    var controller = new AbortController();
-    setTimeout(function () { controller.abort(); }, ms);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), ms);
     return fetch(url, Object.assign({}, baseOpts, { signal: controller.signal }));
   }
 
@@ -109,12 +109,12 @@ function initApp() {
   // Tries each configured proxy in order. Returns the first successful
   // (non-403) response. Throws if all proxies fail.
   async function fetchViaProxy(targetUrl, timeoutMs, options) {
-    var lastError = null;
-    for (var i = 0; i < CORS_PROXIES.length; i++) {
-      var proxy = CORS_PROXIES[i];
-      var url = proxiedUrl(targetUrl, proxy);
+    let lastError = null;
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      const proxy = CORS_PROXIES[i];
+      const url = proxiedUrl(targetUrl, proxy);
       try {
-        var response = await fetchWithTimeout(url, timeoutMs, options);
+        const response = await fetchWithTimeout(url, timeoutMs, options);
         if (response.status === 403) {
           lastError = new Error("Proxy " + proxy.prefix + " returned 403");
           continue; // try next proxy
