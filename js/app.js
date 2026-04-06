@@ -35,8 +35,9 @@ const LEADERBOARD_CATEGORIES = [
 
 const LOWER_IS_BETTER = ["deaths", "losses"];
 
-// ─── DOM References ─────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", () => {
+// ─── Initialization ─────────────────────────────────────────────
+// Use readyState check so the app works even if DOMContentLoaded already fired
+function initApp() {
   const fetchBtn = document.getElementById("fetch-btn");
   const gameModeSelect = document.getElementById("game-mode");
   const platformSelect = document.getElementById("platform");
@@ -58,13 +59,16 @@ document.addEventListener("DOMContentLoaded", () => {
   let sortDirection = "asc";
 
   // ─── Fetch with timeout helper ─────────────────────────────
-  // AbortSignal.timeout keeps the abort signal active for the entire
-  // duration (including body reading via response.json()), so a slow
-  // body transfer will still be terminated after the timeout fires.
+  // Uses AbortSignal.timeout when available, with a fallback for
+  // older browsers that only support AbortController.
   function fetchWithTimeout(url, timeoutMs) {
-    return fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs || FETCH_TIMEOUT_MS),
-    });
+    const ms = timeoutMs || FETCH_TIMEOUT_MS;
+    if (typeof AbortSignal.timeout === "function") {
+      return fetch(url, { signal: AbortSignal.timeout(ms) });
+    }
+    const controller = new AbortController();
+    setTimeout(function () { controller.abort(); }, ms);
+    return fetch(url, { signal: controller.signal });
   }
 
   // ─── Populate categories from config ────────────────────────
@@ -91,20 +95,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const apiStatusBody = document.getElementById("api-status-body");
   const apiRecheckBtn = document.getElementById("api-recheck-btn");
 
-  apiStatusToggle.addEventListener("click", () => {
-    const isHidden = apiStatusBody.classList.toggle("hidden");
-    apiStatusToggle.textContent = isHidden ? "Afficher" : "Masquer";
-  });
+  if (apiStatusToggle && apiStatusBody) {
+    apiStatusToggle.addEventListener("click", () => {
+      const isHidden = apiStatusBody.classList.toggle("hidden");
+      apiStatusToggle.textContent = isHidden ? "Afficher" : "Masquer";
+    });
+  }
 
-  apiRecheckBtn.addEventListener("click", () => {
-    checkApiStatus();
-  });
+  if (apiRecheckBtn) {
+    apiRecheckBtn.addEventListener("click", () => {
+      checkApiStatus();
+    });
+  }
 
   checkApiStatus();
 
   function setApiIndicator(id, status, detail) {
     const indicator = document.getElementById("api-indicator-" + id);
     const detailEl = document.getElementById("api-detail-" + id);
+    if (!indicator || !detailEl) return;
     indicator.className = "api-status-indicator " + status;
     if (status === "ok") {
       indicator.textContent = "✅";
@@ -280,24 +289,30 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ─── Category toggle buttons ────────────────────────────────
-  selectAllBtn.addEventListener("click", () => {
-    document
-      .querySelectorAll('#categories-grid input[type="checkbox"]')
-      .forEach((cb) => {
-        cb.checked = true;
-      });
-  });
+  if (selectAllBtn) {
+    selectAllBtn.addEventListener("click", () => {
+      document
+        .querySelectorAll('#categories-grid input[type="checkbox"]')
+        .forEach((cb) => {
+          cb.checked = true;
+        });
+    });
+  }
 
-  deselectAllBtn.addEventListener("click", () => {
-    document
-      .querySelectorAll('#categories-grid input[type="checkbox"]')
-      .forEach((cb) => {
-        cb.checked = false;
-      });
-  });
+  if (deselectAllBtn) {
+    deselectAllBtn.addEventListener("click", () => {
+      document
+        .querySelectorAll('#categories-grid input[type="checkbox"]')
+        .forEach((cb) => {
+          cb.checked = false;
+        });
+    });
+  }
 
   // ─── Fetch leaderboard ──────────────────────────────────────
-  fetchBtn.addEventListener("click", fetchLeaderboard);
+  if (fetchBtn) {
+    fetchBtn.addEventListener("click", fetchLeaderboard);
+  }
 
   async function fetchLeaderboard() {
     const gameMode = gameModeSelect.value;
@@ -723,4 +738,14 @@ document.addEventListener("DOMContentLoaded", () => {
   function hideError() {
     errorEl.classList.add("hidden");
   }
-});
+}
+
+// ─── Bootstrap ──────────────────────────────────────────────────
+// Run initApp as soon as the DOM is ready.  If DOMContentLoaded
+// already fired (readyState is "interactive" or "complete"),
+// run immediately; otherwise wait for the event.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initApp);
+} else {
+  initApp();
+}
