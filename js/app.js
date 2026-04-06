@@ -23,9 +23,14 @@ const CORS_PROXIES = [
   { prefix: "https://corsproxy.io/?url=", encode: true },
   { prefix: "https://api.allorigins.win/raw?url=", encode: true },
   { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
-  { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
-  { prefix: "https://yacdn.org/proxy/", encode: false },
+  { prefix: "https://corsproxy.org/?url=", encode: true },
+  { prefix: "https://cors.eu.org/", encode: false },
 ];
+
+// Maximum number of retry rounds for the full proxy list.
+// A second round helps recover from transient failures (rate limits, timeouts).
+const PROXY_RETRY_ROUNDS = 2;
+const PROXY_RETRY_DELAY_MS = 3000;
 
 // Available leaderboard boards (metrics) on Tracker.gg.
 // Each board represents one stat that players can be ranked by.
@@ -120,45 +125,56 @@ function initApp() {
     let lastError = null;
     const total = CORS_PROXIES.length;
 
-    for (let attempt = 0; attempt < total; attempt++) {
-      const i = (lastWorkingProxyIndex + attempt) % total;
-      const proxy = CORS_PROXIES[i];
-      const url = proxiedUrl(targetUrl, proxy);
-      try {
-        const response = await fetchWithTimeout(url, timeoutMs, options);
-        if (response.status === 403 || response.status === 429) {
-          console.warn("[CORS] Proxy " + proxy.prefix + " → " + response.status + ", essai suivant…");
-          lastError = new Error("Proxy " + proxy.prefix + " returned " + response.status);
-          continue; // try next proxy
+    for (let round = 0; round < PROXY_RETRY_ROUNDS; round++) {
+      // Wait before retrying the full proxy list (skip delay on first round).
+      if (round > 0) {
+        console.info("[CORS] Tous les proxies ont échoué, nouvelle tentative dans " + (PROXY_RETRY_DELAY_MS / 1000) + "s (round " + (round + 1) + "/" + PROXY_RETRY_ROUNDS + ")…");
+        await new Promise(function (resolve) { setTimeout(resolve, PROXY_RETRY_DELAY_MS); });
+      }
+
+      for (let attempt = 0; attempt < total; attempt++) {
+        const i = (lastWorkingProxyIndex + attempt) % total;
+        const proxy = CORS_PROXIES[i];
+        const url = proxiedUrl(targetUrl, proxy);
+        try {
+          const response = await fetchWithTimeout(url, timeoutMs, options);
+          if (response.status === 403 || response.status === 408 || response.status === 429) {
+            console.warn("[CORS] Proxy " + proxy.prefix + " → " + response.status + ", essai suivant…");
+            lastError = new Error("Proxy " + proxy.prefix + " returned " + response.status);
+            continue; // try next proxy
+          }
+          // Guard against proxies that return their own HTML error page
+          // or non-JSON content with a 200 status code instead of
+          // forwarding the upstream JSON response.
+          const contentType = (response.headers.get("content-type") || "").toLowerCase();
+          if (contentType.includes("text/html") || contentType.includes("text/plain")) {
+            console.warn("[CORS] Proxy " + proxy.prefix + " → réponse non-JSON (" + contentType + "), essai suivant…");
+            lastError = new Error("Proxy " + proxy.prefix + " returned non-JSON content (" + contentType + ")");
+            continue;
+          }
+          // If the content-type is present but clearly not JSON, skip.
+          if (contentType && !contentType.includes("json") && !contentType.includes("octet-stream")) {
+            console.warn("[CORS] Proxy " + proxy.prefix + " → content-type inattendu (" + contentType + "), essai suivant…");
+            lastError = new Error("Proxy " + proxy.prefix + " returned unexpected content-type (" + contentType + ")");
+            continue;
+          }
+          // Remember this working proxy for future calls.
+          lastWorkingProxyIndex = i;
+          if (attempt > 0 || round > 0) {
+            console.info("[CORS] Succès via proxy de secours : " + proxy.prefix + (round > 0 ? " (round " + (round + 1) + ")" : ""));
+          }
+          return response;
+        } catch (e) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → erreur réseau, essai suivant…");
+          lastError = e;
+          // network / timeout error — try next proxy
         }
-        // Guard against proxies that return their own HTML error page
-        // or non-JSON content with a 200 status code instead of
-        // forwarding the upstream JSON response.
-        const contentType = (response.headers.get("content-type") || "").toLowerCase();
-        if (contentType.includes("text/html") || contentType.includes("text/plain")) {
-          console.warn("[CORS] Proxy " + proxy.prefix + " → réponse non-JSON (" + contentType + "), essai suivant…");
-          lastError = new Error("Proxy " + proxy.prefix + " returned non-JSON content (" + contentType + ")");
-          continue;
-        }
-        // If the content-type is present but clearly not JSON, skip.
-        if (contentType && !contentType.includes("json") && !contentType.includes("octet-stream")) {
-          console.warn("[CORS] Proxy " + proxy.prefix + " → content-type inattendu (" + contentType + "), essai suivant…");
-          lastError = new Error("Proxy " + proxy.prefix + " returned unexpected content-type (" + contentType + ")");
-          continue;
-        }
-        // Remember this working proxy for future calls.
-        lastWorkingProxyIndex = i;
-        if (attempt > 0) {
-          console.info("[CORS] Succès via proxy de secours : " + proxy.prefix);
-        }
-        return response;
-      } catch (e) {
-        console.warn("[CORS] Proxy " + proxy.prefix + " → erreur réseau, essai suivant…");
-        lastError = e;
-        // network / timeout error — try next proxy
       }
     }
-    throw lastError || new Error("Tous les proxies CORS ont échoué (" + total + " essayés)");
+    // All proxies failed across all rounds — reset index so next call
+    // starts from the first proxy instead of a previously-working one.
+    lastWorkingProxyIndex = 0;
+    throw lastError || new Error("Tous les proxies CORS ont échoué (" + total + " essayés, " + PROXY_RETRY_ROUNDS + " tentatives)");
   }
 
   // ─── Populate selectors from config ─────────────────────────
