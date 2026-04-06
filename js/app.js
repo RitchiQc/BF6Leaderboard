@@ -67,7 +67,7 @@ function initApp() {
       return fetch(url, { signal: AbortSignal.timeout(ms) });
     }
     const controller = new AbortController();
-    setTimeout(function () { controller.abort(); }, ms);
+    setTimeout(() => controller.abort(), ms);
     return fetch(url, { signal: controller.signal });
   }
 
