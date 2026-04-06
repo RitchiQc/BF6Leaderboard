@@ -22,7 +22,7 @@ const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 // CORS proxy needed.  Leave empty ("") to fall back to public proxies.
 //
 // Example: "https://bf6-leaderboard-proxy.<you>.workers.dev"
-const SELF_HOSTED_PROXY_URL = "";
+const SELF_HOSTED_PROXY_URL = "https://bf6-leaderboard-proxy.ritchiserver.workers.dev";
 
 // Public CORS proxies — used ONLY when SELF_HOSTED_PROXY_URL is empty.
 // They are unreliable (rate-limited, blocked, slow).  Prefer deploying
