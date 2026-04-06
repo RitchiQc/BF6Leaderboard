@@ -50,8 +50,9 @@
                     </div>
                 </div>
                 <p class="api-status-note">
-                    ℹ️ Les requêtes Tracker.gg passent par un proxy CORS (avec basculement automatique et nouvelle tentative).
-                    Si le statut est en erreur, les proxies ou l'API peuvent être temporairement indisponibles.
+                    ℹ️ Les requêtes Tracker.gg passent par un Cloudflare Worker auto-hébergé (recommandé)
+                    ou par des proxies CORS publics (solution de secours).
+                    Consultez le dossier <code>workers/</code> pour déployer votre propre Worker gratuitement.
                 </p>
                 <div class="api-status-footer">
                     <span id="api-status-time" class="api-status-time"></span>
@@ -177,6 +178,6 @@
             JavaScript est requis pour utiliser BF6 Leaderboard. Veuillez activer JavaScript dans votre navigateur.
         </div>
     </noscript>
-    <script src="js/app.js?v=7"></script>
+    <script src="js/app.js?v=8"></script>
 </body>
 </html>
