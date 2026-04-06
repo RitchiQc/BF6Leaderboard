@@ -16,8 +16,9 @@ const ALLOWED_HOSTS = ["api.tracker.gg"];
 
 // User-Agent sent to upstream APIs. Uses a recent browser string so
 // that Tracker.gg treats the request like a normal visitor.
+// Keep this updated — stale versions trigger bot-detection flags.
 const UPSTREAM_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
 
 // Full set of browser-like headers sent to Tracker.gg.
 // Cloudflare bot-management inspects Sec-Fetch-*, Accept-Language,
@@ -28,17 +29,22 @@ function upstreamHeaders() {
     "User-Agent": UPSTREAM_USER_AGENT,
     Accept: "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.9,fr;q=0.8",
-    "Accept-Encoding": "gzip, deflate, br",
-    Referer: "https://tracker.gg/",
+    "Accept-Encoding": "gzip, deflate, br, zstd",
+    Referer: "https://tracker.gg/bf6/leaderboards",
     Origin: "https://tracker.gg",
+    // tracker.gg → api.tracker.gg = same registrable domain but
+    // different subdomains, so the correct value is "same-site".
+    // Using "same-origin" was incorrect and likely flagged by bot detection.
     "Sec-Fetch-Dest": "empty",
     "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Ch-Ua":
+      '"Chromium";v="136", "Google Chrome";v="136", "Not-A.Brand";v="24"',
     "Sec-Ch-Ua-Mobile": "?0",
     "Sec-Ch-Ua-Platform": '"Windows"',
     "Cache-Control": "no-cache",
     Pragma: "no-cache",
+    Priority: "u=1, i",
   };
 }
 
