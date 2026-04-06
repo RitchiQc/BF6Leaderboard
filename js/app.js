@@ -35,7 +35,8 @@ const CORS_PROXIES = [
   { prefix: "https://cors.eu.org/", encode: false },
 ];
 
-// Maximum number of retry rounds for the full proxy list.
+// Maximum number of retry rounds for the public proxy fallback list.
+// Reduced to 2 (from 3) because the self-hosted Worker is the primary path.
 const PROXY_RETRY_ROUNDS = 2;
 const PROXY_RETRY_DELAY_MS = 3000;
 
