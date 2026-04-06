@@ -15,6 +15,11 @@ const TRACKER_API_URL = "https://api.tracker.gg/api/v2/bf6/standard";
 const FETCH_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
+// CORS proxy used to reach Tracker.gg from the browser.
+// Tracker.gg does not set Access-Control-Allow-Origin for third-party origins,
+// so we route requests through this proxy.  Change the URL if you self-host one.
+const CORS_PROXY_URL = "https://corsproxy.io?";
+
 // Available leaderboard boards (metrics) on Tracker.gg.
 // Each board represents one stat that players can be ranked by.
 const LEADERBOARD_BOARDS = [
@@ -73,6 +78,13 @@ function initApp() {
   let currentData = null;
   let sortColumn = "rank";
   let sortDirection = "asc";
+
+  // ─── CORS proxy helper ──────────────────────────────────────
+  // Wraps a Tracker.gg URL through the configured CORS proxy.
+  function proxiedUrl(url) {
+    if (!CORS_PROXY_URL) return url;
+    return CORS_PROXY_URL + encodeURIComponent(url);
+  }
 
   // ─── Fetch with timeout helper ─────────────────────────────
   // Uses AbortSignal.timeout when available, with a fallback for
@@ -222,18 +234,10 @@ function initApp() {
   async function checkTrackerApi() {
     const lbStart = performance.now();
     try {
-      const response = await fetchWithTimeout(
-        TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1",
-        FETCH_TIMEOUT_MS,
-        {
-          credentials: "include",
-          headers: {
-            Accept: "application/json, text/plain, */*",
-            "Accept-Language": "en-US,en;q=0.9",
-            Referer: "https://tracker.gg/",
-          },
-        },
+      const url = proxiedUrl(
+        TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1"
       );
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
       const elapsed = Math.round(performance.now() - lbStart);
       if (response.ok) {
         setApiIndicator("tracker", "ok", "En ligne — " + elapsed + " ms");
@@ -241,7 +245,7 @@ function initApp() {
         setApiIndicator(
           "tracker",
           "error",
-          "Bloqué (403) — Visitez tracker.gg d'abord — " + elapsed + " ms",
+          "Bloqué (403) — " + elapsed + " ms",
         );
       } else {
         setApiIndicator(
@@ -402,7 +406,7 @@ function initApp() {
       if (!data.players || data.players.length === 0) {
         if (data.failed_categories === data.total_categories) {
           showError(
-            "Tracker.gg est inaccessible ou bloqué par CORS. Assurez-vous d'avoir visité tracker.gg récemment dans ce navigateur, puis réessayez.",
+            "Tracker.gg est inaccessible. Le proxy CORS ou l'API Tracker.gg peut être temporairement hors service. Réessayez dans quelques instants.",
           );
         } else {
           showError(
@@ -435,15 +439,8 @@ function initApp() {
       page: String(page),
     });
 
-    const url = TRACKER_API_URL + "/leaderboards?" + params.toString();
-    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS, {
-      credentials: "include",
-      headers: {
-        Accept: "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        Referer: "https://tracker.gg/",
-      },
-    });
+    const url = proxiedUrl(TRACKER_API_URL + "/leaderboards?" + params.toString());
+    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(
