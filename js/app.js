@@ -24,11 +24,6 @@ const CORS_PROXIES = [
   { prefix: "https://api.allorigins.win/raw?url=", encode: true },
   { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
   { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
-  { prefix: "https://corsproxy.org/?", encode: true },
-  { prefix: "https://proxy.cors.sh/", encode: false },
-  { prefix: "https://api.cors.lol/?url=", encode: true },
-  { prefix: "https://corsanywhere.net/", encode: false },
-  { prefix: "https://cors.eu.org/", encode: false },
   { prefix: "https://yacdn.org/proxy/", encode: false },
 ];
 
@@ -131,17 +126,24 @@ function initApp() {
       const url = proxiedUrl(targetUrl, proxy);
       try {
         const response = await fetchWithTimeout(url, timeoutMs, options);
-        if (response.status === 403) {
-          console.warn("[CORS] Proxy " + proxy.prefix + " → 403, essai suivant…");
-          lastError = new Error("Proxy " + proxy.prefix + " returned 403");
+        if (response.status === 403 || response.status === 429) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → " + response.status + ", essai suivant…");
+          lastError = new Error("Proxy " + proxy.prefix + " returned " + response.status);
           continue; // try next proxy
         }
         // Guard against proxies that return their own HTML error page
-        // with a 200 status code instead of forwarding the upstream response.
+        // or non-JSON content with a 200 status code instead of
+        // forwarding the upstream JSON response.
         const contentType = (response.headers.get("content-type") || "").toLowerCase();
-        if (contentType.includes("text/html")) {
-          console.warn("[CORS] Proxy " + proxy.prefix + " → réponse HTML au lieu de JSON, essai suivant…");
-          lastError = new Error("Proxy " + proxy.prefix + " returned HTML instead of JSON");
+        if (contentType.includes("text/html") || contentType.includes("text/plain")) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → réponse non-JSON (" + contentType + "), essai suivant…");
+          lastError = new Error("Proxy " + proxy.prefix + " returned non-JSON content (" + contentType + ")");
+          continue;
+        }
+        // If the content-type is present but clearly not JSON, skip.
+        if (contentType && !contentType.includes("json") && !contentType.includes("octet-stream")) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → content-type inattendu (" + contentType + "), essai suivant…");
+          lastError = new Error("Proxy " + proxy.prefix + " returned unexpected content-type (" + contentType + ")");
           continue;
         }
         // Remember this working proxy for future calls.
