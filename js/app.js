@@ -507,7 +507,7 @@ function initApp() {
     }
 
     const text = await response.text();
-    var json;
+    let json;
     try {
       json = JSON.parse(text);
     } catch (e) {
