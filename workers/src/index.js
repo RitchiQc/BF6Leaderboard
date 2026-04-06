@@ -200,9 +200,8 @@ async function handleTest(request) {
       redirect: "follow",
     });
     const body = await response.text();
-    const isJson = (() => {
-      try { JSON.parse(body); return true; } catch { return false; }
-    })();
+    let isJson = false;
+    try { JSON.parse(body); isJson = true; } catch { /* not JSON */ }
 
     return Response.json(
       {

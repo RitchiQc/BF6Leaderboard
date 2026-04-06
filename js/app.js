@@ -146,17 +146,17 @@ function initApp() {
     // ── Try the self-hosted Worker first ──
     if (SELF_HOSTED_PROXY_URL) {
       try {
-        var url = workerProxyUrl(targetUrl);
-        var response = await fetchWithTimeout(url, timeoutMs, options);
+        const url = workerProxyUrl(targetUrl);
+        const response = await fetchWithTimeout(url, timeoutMs, options);
 
         if (response.ok) {
           // Worker returned 200 — but check if the upstream was actually an error.
-          var proxyStatus = response.headers.get("X-Proxy-Status");
-          var upstreamStatus = response.headers.get("X-Upstream-Status");
+          const proxyStatus = response.headers.get("X-Proxy-Status");
+          const upstreamStatus = response.headers.get("X-Upstream-Status");
 
           if (proxyStatus === "upstream-error") {
             // Worker reached Tracker.gg but got a non-2xx response.
-            var errBody = {};
+            let errBody = {};
             try { errBody = await response.clone().json(); } catch (_) {}
             console.warn(
               "[Worker] Tracker.gg a retourné HTTP " + (upstreamStatus || "?") +
@@ -168,7 +168,7 @@ function initApp() {
 
           // Quick JSON sanity check on successful upstream responses.
           try {
-            var clone = response.clone();
+            const clone = response.clone();
             JSON.parse(await clone.text());
           } catch (_parseErr) {
             console.warn("[Worker] Réponse non-JSON, basculement sur proxies publics…");
@@ -408,7 +408,7 @@ function initApp() {
         // With the new Worker format, a 200 response might still carry
         // an upstream error flag.  Double-check by peeking at the body.
         try {
-          var body = await response.clone().json();
+          const body = await response.clone().json();
           if (body && body.proxyError) {
             setApiIndicator(
               "tracker",
