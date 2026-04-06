@@ -15,10 +15,22 @@ const TRACKER_API_URL = "https://api.tracker.gg/api/v2/bf6/standard";
 const FETCH_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
-// CORS proxy used to reach Tracker.gg from the browser.
+// CORS proxies used to reach Tracker.gg from the browser.
 // Tracker.gg does not set Access-Control-Allow-Origin for third-party origins,
-// so we route requests through this proxy.  Change the URL if you self-host one.
-const CORS_PROXY_URL = "https://corsproxy.io?";
+// so we route requests through a proxy.  Change the URLs if you self-host one.
+// If the first proxy fails (403 / network error), the next one is tried automatically.
+const CORS_PROXIES = [
+  { prefix: "https://corsproxy.io/?url=", encode: true },
+  { prefix: "https://api.allorigins.win/raw?url=", encode: true },
+  { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
+  { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
+  { prefix: "https://corsproxy.org/?", encode: true },
+  { prefix: "https://proxy.cors.sh/", encode: false },
+  { prefix: "https://api.cors.lol/?url=", encode: true },
+  { prefix: "https://corsanywhere.net/", encode: false },
+  { prefix: "https://cors.eu.org/", encode: false },
+  { prefix: "https://yacdn.org/proxy/", encode: false },
+];
 
 // Available leaderboard boards (metrics) on Tracker.gg.
 // Each board represents one stat that players can be ranked by.
@@ -79,11 +91,11 @@ function initApp() {
   let sortColumn = "rank";
   let sortDirection = "asc";
 
-  // ─── CORS proxy helper ──────────────────────────────────────
-  // Wraps a Tracker.gg URL through the configured CORS proxy.
-  function proxiedUrl(url) {
-    if (!CORS_PROXY_URL) return url;
-    return CORS_PROXY_URL + encodeURIComponent(url);
+  // ─── CORS proxy helpers ─────────────────────────────────────
+  // Wraps a URL through a specific CORS proxy entry.
+  function proxiedUrl(url, proxy) {
+    if (!proxy) return url;
+    return proxy.prefix + (proxy.encode ? encodeURIComponent(url) : url);
   }
 
   // ─── Fetch with timeout helper ─────────────────────────────
@@ -98,6 +110,34 @@ function initApp() {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), ms);
     return fetch(url, Object.assign({}, baseOpts, { signal: controller.signal }));
+  }
+
+  // ─── Fetch through CORS proxy with fallback ────────────────
+  // Tries each configured proxy in order. Returns the first successful
+  // (non-403) response. Throws if all proxies fail.
+  async function fetchViaProxy(targetUrl, timeoutMs, options) {
+    let lastError = null;
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      const proxy = CORS_PROXIES[i];
+      const url = proxiedUrl(targetUrl, proxy);
+      try {
+        const response = await fetchWithTimeout(url, timeoutMs, options);
+        if (response.status === 403) {
+          console.warn("[CORS] Proxy " + proxy.prefix + " → 403, essai suivant…");
+          lastError = new Error("Proxy " + proxy.prefix + " returned 403");
+          continue; // try next proxy
+        }
+        if (i > 0) {
+          console.info("[CORS] Succès via proxy de secours : " + proxy.prefix);
+        }
+        return response;
+      } catch (e) {
+        console.warn("[CORS] Proxy " + proxy.prefix + " → erreur réseau, essai suivant…");
+        lastError = e;
+        // network / timeout error — try next proxy
+      }
+    }
+    throw lastError || new Error("Tous les proxies CORS ont échoué (" + CORS_PROXIES.length + " essayés)");
   }
 
   // ─── Populate selectors from config ─────────────────────────
@@ -234,10 +274,9 @@ function initApp() {
   async function checkTrackerApi() {
     const lbStart = performance.now();
     try {
-      const url = proxiedUrl(
-        TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1"
-      );
-      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
+      const targetUrl =
+        TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1";
+      const response = await fetchViaProxy(targetUrl, FETCH_TIMEOUT_MS);
       const elapsed = Math.round(performance.now() - lbStart);
       if (response.ok) {
         setApiIndicator("tracker", "ok", "En ligne — " + elapsed + " ms");
@@ -245,7 +284,7 @@ function initApp() {
         setApiIndicator(
           "tracker",
           "error",
-          "Bloqué (403) — " + elapsed + " ms",
+          "Bloqué (403) — tous les proxies ont échoué — " + elapsed + " ms",
         );
       } else {
         setApiIndicator(
@@ -439,8 +478,8 @@ function initApp() {
       page: String(page),
     });
 
-    const url = proxiedUrl(TRACKER_API_URL + "/leaderboards?" + params.toString());
-    const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
+    const targetUrl = TRACKER_API_URL + "/leaderboards?" + params.toString();
+    const response = await fetchViaProxy(targetUrl, FETCH_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new Error(
