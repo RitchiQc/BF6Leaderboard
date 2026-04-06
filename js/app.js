@@ -102,6 +102,10 @@ function initApp() {
     return proxy.prefix + (proxy.encode ? encodeURIComponent(url) : url);
   }
 
+  // HTTP status codes that indicate a proxy-level failure (not an upstream
+  // JSON error).  When one of these is returned we skip to the next proxy.
+  const PROXY_SKIP_STATUSES = [403, 408, 429, 500, 502, 503, 504];
+
   // Index of the last proxy that returned a valid response.
   // Subsequent calls try this proxy first to avoid repeatedly hitting dead ones.
   var lastWorkingProxyIndex = 0;
@@ -142,8 +146,7 @@ function initApp() {
         const url = proxiedUrl(targetUrl, proxy);
         try {
           const response = await fetchWithTimeout(url, timeoutMs, options);
-          if (response.status === 403 || response.status === 408 || response.status === 429
-              || response.status === 500 || response.status === 502 || response.status === 503 || response.status === 504) {
+          if (PROXY_SKIP_STATUSES.includes(response.status)) {
             console.warn("[CORS] Proxy " + proxy.prefix + " → " + response.status + ", essai suivant…");
             lastError = new Error("Proxy " + proxy.prefix + " returned " + response.status);
             continue; // try next proxy
