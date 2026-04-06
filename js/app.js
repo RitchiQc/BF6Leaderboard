@@ -15,25 +15,29 @@ const TRACKER_API_URL = "https://api.tracker.gg/api/v2/bf6/standard";
 const FETCH_TIMEOUT_MS = 10000;
 const FETCH_TIMEOUT_SECONDS = FETCH_TIMEOUT_MS / 1000;
 
-// CORS proxies used to reach Tracker.gg from the browser.
-// Tracker.gg does not set Access-Control-Allow-Origin for third-party origins,
-// so we route requests through a proxy.  Change the URLs if you self-host one.
-// If the first proxy fails (403 / network error), the next one is tried automatically.
+// ── Self-hosted Cloudflare Worker proxy ──────────────────────────
+// Deploy the worker in the "workers/" folder to your own Cloudflare account
+// (free tier, 100 000 req/day) and paste the URL below.
+// When set, all Tracker.gg requests go through YOUR worker — no public
+// CORS proxy needed.  Leave empty ("") to fall back to public proxies.
+//
+// Example: "https://bf6-leaderboard-proxy.<you>.workers.dev"
+const SELF_HOSTED_PROXY_URL = "";
+
+// Public CORS proxies — used ONLY when SELF_HOSTED_PROXY_URL is empty.
+// They are unreliable (rate-limited, blocked, slow).  Prefer deploying
+// the Cloudflare Worker above for a stable experience.
 const CORS_PROXIES = [
   { prefix: "https://corsproxy.io/?url=", encode: true },
   { prefix: "https://api.allorigins.win/raw?url=", encode: true },
   { prefix: "https://api.codetabs.com/v1/proxy?quest=", encode: true },
   { prefix: "https://corsproxy.org/?url=", encode: true },
   { prefix: "https://cors.eu.org/", encode: false },
-  { prefix: "https://test.cors.workers.dev/?", encode: false },
-  { prefix: "https://yacdn.org/proxy/", encode: false },
-  { prefix: "https://thingproxy.freeboard.io/fetch/", encode: false },
-  { prefix: "https://crossproxy.me/", encode: false },
 ];
 
-// Maximum number of retry rounds for the full proxy list.
-// Extra rounds help recover from transient failures (rate limits, timeouts).
-const PROXY_RETRY_ROUNDS = 3;
+// Maximum number of retry rounds for the public proxy fallback list.
+// Reduced to 2 (from 3) because the self-hosted Worker is the primary path.
+const PROXY_RETRY_ROUNDS = 2;
 const PROXY_RETRY_DELAY_MS = 3000;
 
 // Available leaderboard boards (metrics) on Tracker.gg.
@@ -102,6 +106,12 @@ function initApp() {
     return proxy.prefix + (proxy.encode ? encodeURIComponent(url) : url);
   }
 
+  // Build the URL for the self-hosted Cloudflare Worker proxy.
+  function workerProxyUrl(targetUrl) {
+    var base = SELF_HOSTED_PROXY_URL.replace(/\/+$/, "");
+    return base + "/proxy?url=" + encodeURIComponent(targetUrl);
+  }
+
   // HTTP status codes that indicate a proxy-level failure (not an upstream
   // JSON error).  When one of these is returned we skip to the next proxy.
   const PROXY_SKIP_STATUSES = [403, 408, 429, 500, 502, 503, 504];
@@ -124,12 +134,46 @@ function initApp() {
     return fetch(url, Object.assign({}, baseOpts, { signal: controller.signal }));
   }
 
-  // ─── Fetch through CORS proxy with fallback ────────────────
+  // ─── Fetch through self-hosted Worker ──────────────────────
+  // Tries the self-hosted Cloudflare Worker first.  If it fails
+  // or is not configured, falls back to public CORS proxies.
+  async function fetchViaProxy(targetUrl, timeoutMs, options) {
+    // ── Try the self-hosted Worker first ──
+    if (SELF_HOSTED_PROXY_URL) {
+      try {
+        const url = workerProxyUrl(targetUrl);
+        const response = await fetchWithTimeout(url, timeoutMs, options);
+        if (response.ok) {
+          // Quick JSON sanity check.
+          try {
+            const clone = response.clone();
+            JSON.parse(await clone.text());
+          } catch (_parseErr) {
+            console.warn("[Worker] Réponse non-JSON, basculement sur proxies publics…");
+            // fall through to public proxies below
+            return fetchViaPublicProxies(targetUrl, timeoutMs, options);
+          }
+          console.info("[Worker] Succès via Cloudflare Worker");
+          return response;
+        }
+        console.warn("[Worker] HTTP " + response.status + ", basculement sur proxies publics…");
+      } catch (e) {
+        console.warn("[Worker] Erreur réseau (" + e.message + "), basculement sur proxies publics…");
+      }
+      // Fall through to public proxies.
+      return fetchViaPublicProxies(targetUrl, timeoutMs, options);
+    }
+
+    // ── No Worker configured — go straight to public proxies ──
+    return fetchViaPublicProxies(targetUrl, timeoutMs, options);
+  }
+
+  // ─── Fetch through public CORS proxies (fallback) ──────────
   // Tries each configured proxy in order, starting from the last
   // one that worked.  Returns the first successful response whose
   // body looks like JSON (not an HTML error page).
   // Throws if all proxies fail.
-  async function fetchViaProxy(targetUrl, timeoutMs, options) {
+  async function fetchViaPublicProxies(targetUrl, timeoutMs, options) {
     let lastError = null;
     const total = CORS_PROXIES.length;
 
@@ -195,7 +239,7 @@ function initApp() {
     // All proxies failed across all rounds — reset index so next call
     // starts from the first proxy instead of a previously-working one.
     lastWorkingProxyIndex = 0;
-    throw lastError || new Error("Tous les proxies CORS ont échoué (" + total + " essayés, " + PROXY_RETRY_ROUNDS + " tentatives)");
+    throw lastError || new Error("Tous les proxies CORS ont échoué (" + total + " essayés, " + PROXY_RETRY_ROUNDS + " tentatives). Déployez le Cloudflare Worker (voir workers/) pour une solution fiable.");
   }
 
   // ─── Populate selectors from config ─────────────────────────
@@ -331,35 +375,36 @@ function initApp() {
 
   async function checkTrackerApi() {
     const lbStart = performance.now();
+    const mode = SELF_HOSTED_PROXY_URL ? "Worker" : "proxy CORS";
     try {
       const targetUrl =
         TRACKER_API_URL + "/leaderboards?type=gamemodes&platform=all&board=Kills&gamemode=gm_strike&page=1";
       const response = await fetchViaProxy(targetUrl, FETCH_TIMEOUT_MS);
       const elapsed = Math.round(performance.now() - lbStart);
       if (response.ok) {
-        setApiIndicator("tracker", "ok", "En ligne — " + elapsed + " ms");
+        setApiIndicator("tracker", "ok", "En ligne via " + mode + " — " + elapsed + " ms");
       } else if (response.status === 403) {
         setApiIndicator(
           "tracker",
           "error",
-          "Bloqué (403) — tous les proxies ont échoué — " + elapsed + " ms",
+          "Bloqué (403) via " + mode + " — " + elapsed + " ms",
         );
       } else {
         setApiIndicator(
           "tracker",
           "error",
-          "Erreur HTTP " + response.status + " — " + elapsed + " ms",
+          "Erreur HTTP " + response.status + " via " + mode + " — " + elapsed + " ms",
         );
       }
     } catch (e) {
       const elapsed = Math.round(performance.now() - lbStart);
       if (e.name === "TimeoutError" || e.name === "AbortError") {
-        setApiIndicator("tracker", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — API injoignable");
+        setApiIndicator("tracker", "error", "Timeout (" + FETCH_TIMEOUT_SECONDS + "s) — " + mode + " injoignable");
       } else {
         setApiIndicator(
           "tracker",
           "error",
-          "Erreur réseau / CORS — " + elapsed + " ms",
+          "Erreur " + mode + " — " + elapsed + " ms" + (SELF_HOSTED_PROXY_URL ? "" : " — déployez le Worker (voir workers/)"),
         );
       }
     }
@@ -503,7 +548,11 @@ function initApp() {
       if (!data.players || data.players.length === 0) {
         if (data.failed_categories === data.total_categories) {
           showError(
-            "Tracker.gg est inaccessible. Le proxy CORS ou l'API Tracker.gg peut être temporairement hors service. Réessayez dans quelques instants.",
+            "Tracker.gg est inaccessible." +
+            (SELF_HOSTED_PROXY_URL
+              ? " Le Worker ou l'API Tracker.gg peut être temporairement hors service."
+              : " Déployez le Cloudflare Worker (voir dossier workers/) pour une solution fiable.") +
+            " Réessayez dans quelques instants.",
           );
         } else {
           showError(

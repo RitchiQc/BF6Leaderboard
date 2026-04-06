@@ -7,8 +7,8 @@ Trouvez les **vrais meilleurs joueurs** de Battlefield 6 en agrégeant toutes le
 ## Fonctionnalités
 
 - **Classement agrégé** : combine toutes les catégories (kills, wins, K/D, score/min, etc.) en un seul score normalisé
-- **Sélection du mode de jeu** : Conquête, Percée, Hazard Zone, Portal, Ruée, Strikepoint, ou tous les modes
-- **Sélection de plateforme** : PC, Xbox, PlayStation
+- **Sélection du mode de jeu** : Strike, Conquête, Percée, Ruée
+- **Sélection de plateforme** : PC, Xbox, PlayStation, Steam
 - **Choix des catégories** : sélectionnez quelles catégories inclure dans le calcul
 - **Détails par joueur** : visualisez la performance par catégorie pour chaque joueur
 - **Tri** : triez par rang, nom, score total, ou moyenne par catégorie
@@ -16,10 +16,57 @@ Trouvez les **vrais meilleurs joueurs** de Battlefield 6 en agrégeant toutes le
 
 ## Comment ça marche
 
-1. Les données de classement sont récupérées via l'[API GameTools](https://api.gametools.network/) directement depuis votre navigateur
-2. Les scores de chaque catégorie sont **normalisés en percentile** (0–100) pour que chaque catégorie ait le même poids
-3. Le **score total** est la somme des scores normalisés de toutes les catégories
-4. Les joueurs sont classés par score total décroissant
+1. Les données de classement sont récupérées via l'[API Tracker.gg](https://tracker.gg/bf6) (leaderboard) et l'[API GameTools](https://api.gametools.network/) (joueurs en ligne)
+2. Les requêtes Tracker.gg passent par un **Cloudflare Worker auto-hébergé** (ou des proxies CORS publics en secours)
+3. Les scores de chaque catégorie sont **normalisés en percentile** (0–100) pour que chaque catégorie ait le même poids
+4. Le **score total** est la somme des scores normalisés de toutes les catégories
+5. Les joueurs sont classés par score total décroissant
+
+## 🚀 Déployer le Cloudflare Worker (recommandé)
+
+Les proxies CORS publics sont instables. Pour une expérience fiable, déployez votre propre proxy via **Cloudflare Workers** (gratuit, 100 000 requêtes/jour).
+
+### Prérequis
+
+- [Node.js](https://nodejs.org/) (v18+)
+- Un compte [Cloudflare](https://dash.cloudflare.com/sign-up) (gratuit)
+
+### Étapes
+
+```bash
+# 1. Allez dans le dossier workers
+cd workers
+
+# 2. Installez les dépendances
+npm install
+
+# 3. Déployez le Worker (va ouvrir le navigateur pour vous connecter à Cloudflare)
+npx wrangler deploy
+```
+
+Après le déploiement, Wrangler affiche l'URL du Worker, par exemple :
+```
+https://bf6-leaderboard-proxy.<votre-compte>.workers.dev
+```
+
+### Configurer l'application
+
+Ouvrez `js/app.js` et collez l'URL du Worker dans la constante `SELF_HOSTED_PROXY_URL` :
+
+```js
+const SELF_HOSTED_PROXY_URL = "https://bf6-leaderboard-proxy.<votre-compte>.workers.dev";
+```
+
+C'est tout ! L'application utilisera maintenant votre Worker au lieu des proxies publics.
+
+### Vérifier que ça fonctionne
+
+Ouvrez votre navigateur et allez à :
+```
+https://bf6-leaderboard-proxy.<votre-compte>.workers.dev/health
+```
+
+Vous devriez voir : `{"status":"ok","service":"bf6-leaderboard-proxy"}`
 
 ## Utilisation
 
@@ -46,6 +93,11 @@ BF6Leaderboard/
 │   └── style.css       # Styles (dark theme gaming)
 ├── js/
 │   └── app.js          # Toute la logique (config, API, normalisation, agrégation)
+├── workers/            # Cloudflare Worker (proxy auto-hébergé)
+│   ├── src/
+│   │   └── index.js    # Code du Worker
+│   ├── wrangler.toml   # Configuration Wrangler
+│   └── package.json
 └── README.md
 ```
 
@@ -53,33 +105,21 @@ BF6Leaderboard/
 
 | Catégorie | Description |
 |---|---|
-| kills | Éliminations |
-| deaths | Morts (inversé: moins = mieux) |
-| wins | Victoires |
-| losses | Défaites (inversé: moins = mieux) |
-| assists | Assistances |
-| revives | Réanimations |
-| headshots | Tirs à la tête |
-| killsPerMinute | Éliminations par minute |
-| damagePerMinute | Dégâts par minute |
-| scorePerMinute | Score par minute |
-| winPercent | Pourcentage de victoires |
-| killDeath | Ratio K/D |
-| infantryKillDeath | Ratio K/D infanterie |
-| bestSquad | Meilleure escouade |
-| vehiclesDestroyed | Véhicules détruits |
-| saviorKills | Éliminations de sauveur |
-| avengerKills | Éliminations de vengeur |
-| spotEnemies | Ennemis repérés |
-| objectiveTime | Temps sur objectif |
-| timePlayed | Temps de jeu |
+| MatchesWon | Parties gagnées |
+| MatchesPlayed | Parties jouées |
+| Kills | Victimes |
+| Deaths | Morts |
+| Assists | Assistances |
+| KDRatio | Ratio K/D |
+| WLPercentage | % Victoires |
+| Score | Score |
+| TimePlayed | Temps joué |
+| KillsPerMinute | Victimes/min |
+| ScorePerMinute | Score/min |
 
 ## Modes de jeu
 
-- Tous les modes
+- Strike
 - Conquête
 - Percée
-- Hazard Zone
-- Portal
 - Ruée
-- Strikepoint
